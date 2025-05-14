@@ -39,6 +39,8 @@ class IndexTracker:
         print(f"Fetching {self.index_name} components...")
         
         try:
+            import pandas as pd  # Import pandas locally to ensure it's available
+            
             # Use Wikipedia table as data source
             tables = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
             df = tables[0]
@@ -113,9 +115,16 @@ class IndexTracker:
     
     def load_previous_data(self):
         """Load previous index data from JSON file."""
-        if self.data_file.exists():
-            with open(self.data_file, 'r') as f:
-                return json.load(f)
+        try:
+            if self.data_file.exists():
+                with open(self.data_file, 'r') as f:
+                    data = json.load(f)
+                    return data
+        except json.JSONDecodeError as e:
+            print(f"Error loading previous data from {self.data_file}: {e}")
+            print("Starting with empty data instead")
+        except Exception as e:
+            print(f"Unexpected error loading data: {e}")
         return []
     
     def save_current_data(self, data):
@@ -193,30 +202,38 @@ class IndexTracker:
     
     def check_for_changes(self):
         """Check for changes in the index and return detected changes."""
-        current_data = self.fetch_components()
-        previous_data = self.load_previous_data()
-        
-        changes = self.detect_changes(previous_data, current_data)
-        
-        # Log changes if found
-        if changes["message"] and changes["message"][0] != "Initial data collection - no changes to report.":
-            print(f"{self.index_name} changes detected: {len(changes['message'])}")
-            print(f"Top {TOP_POSITIONS_TO_TRACK} changes: {len(changes['top_changes'])}")
+        try:
+            current_data = self.fetch_components()
+            if not current_data:
+                print(f"WARNING: Failed to fetch current {self.index_name} data")
+                return {"message": [], "top_changes": []}
+                
+            previous_data = self.load_previous_data()
             
-            for change in changes["top_changes"]:
-                print(f"  - {change}")
+            changes = self.detect_changes(previous_data, current_data)
             
-            for change in changes["message"]:
-                if change not in changes["top_changes"]:
+            # Log changes if found
+            if changes["message"] and changes["message"][0] != "Initial data collection - no changes to report.":
+                print(f"{self.index_name} changes detected: {len(changes['message'])}")
+                print(f"Top {TOP_POSITIONS_TO_TRACK} changes: {len(changes['top_changes'])}")
+                
+                for change in changes["top_changes"]:
                     print(f"  - {change}")
-        else:
-            print(f"No {self.index_name} changes detected")
-        
-        # Save current data for next time
-        if current_data:
-            self.save_current_data(current_data)
-        
-        return changes
+                
+                for change in changes["message"]:
+                    if change not in changes["top_changes"]:
+                        print(f"  - {change}")
+            else:
+                print(f"No {self.index_name} changes detected")
+            
+            # Save current data for next time
+            if current_data:
+                self.save_current_data(current_data)
+            
+            return changes
+        except Exception as e:
+            print(f"Error checking for changes in {self.index_name}: {e}")
+            return {"message": [], "top_changes": []}
 
 
 class EmailNotifier:
@@ -304,6 +321,9 @@ def main():
         password=EMAIL_PASSWORD,
         recipient=EMAIL_RECIPIENT
     )
+    
+    # Create data directory if it doesn't exist
+    DATA_DIR.mkdir(exist_ok=True)
     
     # Check S&P 500
     sp500_tracker = IndexTracker("S&P 500", SP500_FILE)
