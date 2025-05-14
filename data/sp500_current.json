@@ -10,7 +10,7 @@
   {
     "symbol": "MSFT",
     "name": "Microsoft Corporation",
-    "market_cap": 3339143086000.0,
+    "market_cap": 3338251272000.0,
     "real_data": true,
     "rank": 2,
     "weight": 6.85
@@ -18,7 +18,7 @@
   {
     "symbol": "NVDA",
     "name": "NVIDIA Corporation",
-    "market_cap": 3001199886000.0,
+    "market_cap": 3170291679000.0,
     "real_data": true,
     "rank": 3,
     "weight": 5.01
