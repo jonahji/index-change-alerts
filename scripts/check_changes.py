@@ -68,34 +68,41 @@ def save_shares_outstanding_data(data):
     except Exception as e:
         print(f"Error saving shares data: {e}")
 
-def get_ticker_data(symbol):
+def get_ticker_data(symbol, retries=3, delay=2):
     """Get data for a single ticker with retry logic."""
-    try:
-        # Try to get data individually which is more reliable
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="1mo")
-        if hist.empty:
-            print(f"No history data for {symbol}")
-            return None, None, None
-            
-        # Get the most recent price
-        last_price = hist['Close'].iloc[-1] if not hist.empty else None
-        
-        # Get company info
-        info = ticker.info
-        name = info.get('shortName') or info.get('longName') or symbol
-        market_cap = info.get('marketCap')
-        
-        # If market cap isn't available, calculate it from shares outstanding
-        if not market_cap and last_price:
-            shares = info.get('sharesOutstanding') or info.get('impliedSharesOutstanding')
-            if shares:
-                market_cap = last_price * shares
+    for attempt in range(retries):
+        try:
+            # Try to get data individually which is more reliable
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="1mo")
+            if hist.empty:
+                print(f"No history data for {symbol}")
+                return None, None, None
                 
-        return name, last_price, market_cap
-    except Exception as e:
-        print(f"Error fetching data for {symbol}: {e}")
-        return None, None, None
+            # Get the most recent price
+            last_price = hist['Close'].iloc[-1] if not hist.empty else None
+            
+            # Get company info
+            info = ticker.info
+            name = info.get('shortName') or info.get('longName') or symbol
+            market_cap = info.get('marketCap')
+            
+            # If market cap isn't available, calculate it from shares outstanding
+            if not market_cap and last_price:
+                shares = info.get('sharesOutstanding') or info.get('impliedSharesOutstanding')
+                if shares:
+                    market_cap = last_price * shares
+                    
+            return name, last_price, market_cap
+        except Exception as e:
+            if attempt < retries - 1:
+                print(f"Error with {symbol} (attempt {attempt+1}/{retries}): {e}. Retrying in {delay} seconds...")
+                time.sleep(delay)
+                # Exponential backoff
+                delay *= 2
+            else:
+                print(f"Failed to get ticker '{symbol}' reason: {e}")
+                return None, None, None
 
 def fetch_sp500_components():
     """
@@ -135,86 +142,35 @@ def fetch_sp500_components():
             {"symbol": "HD", "name": "Home Depot, Inc.", "weight": 0.86, "rank": 20},
         ]
         
-        # Now try to fetch actual market cap data for the top 50 symbols
-        # to update the rankings
+        # Convert spy_holdings to a dictionary for the output
         components = []
-        
-        # First, prioritize the top 20 from the hardcoded list
-        top_symbols = [item["symbol"] for item in spy_holdings[:20]]
-        
-        # Only try to fetch data for the top 50 symbols
-        symbols_to_process = top_symbols + [s for s in symbols[:50] if s not in top_symbols]
-        
-        for symbol in symbols_to_process:
-            # Skip tickers with . or - as they often cause issues with yfinance
-            if '.' in symbol and symbol not in ["BRK.B"]:
-                continue
+        for item in spy_holdings:
+            market_cap = 40_000_000_000_000 * (item["weight"] / 100)
+            components.append({
+                'symbol': item['symbol'],
+                'name': item['name'],
+                'market_cap': market_cap,
+                'rank': item['rank']
+            })
+            
+        # Try to update the data for the top few components
+        # But limit API calls to avoid rate limiting
+        for i, component in enumerate(components[:5]):
+            if i > 0:
+                time.sleep(3)  # Add longer delay between requests
                 
-            # Use hardcoded data first
-            hardcoded_item = next((item for item in spy_holdings if item["symbol"] == symbol), None)
+            symbol = component['symbol']
+            print(f"Fetching data for {symbol} ({i+1}/5)...")
             
-            name = None
-            market_cap = None
-            
-            if hardcoded_item:
-                name = hardcoded_item["name"]
-                # Approximate market cap based on S&P 500 total market cap
-                # (roughly $40 trillion as of 2023)
-                market_cap = 40_000_000_000_000 * (hardcoded_item["weight"] / 100)
-            
-            # Try to get real market cap data to improve accuracy
             try:
-                # Check our cache first
-                if symbol in shares_data:
-                    cached_name = shares_data[symbol].get('name')
-                    if cached_name:
-                        name = cached_name
-                
-                # Get fresh ticker data
-                ticker_name, price, ticker_market_cap = get_ticker_data(symbol)
-                
-                # If we got new data, use it
-                if ticker_name:
-                    name = ticker_name
-                if ticker_market_cap:
-                    market_cap = ticker_market_cap
-                    
-                # Add to our components list
-                if name and market_cap:
-                    components.append({
-                        'symbol': symbol,
-                        'name': name,
-                        'market_cap': market_cap,
-                        'rank': 0  # Will fill in later
-                    })
-                    
-                # Brief delay to avoid rate limiting
-                time.sleep(0.2)
+                name, price, market_cap = get_ticker_data(symbol)
+                if name:
+                    component['name'] = name
+                if market_cap:
+                    component['market_cap'] = market_cap
             except Exception as e:
-                print(f"Error processing {symbol}: {e}")
-                # Still add if we have hardcoded data
-                if hardcoded_item:
-                    components.append({
-                        'symbol': symbol,
-                        'name': name,
-                        'market_cap': market_cap,
-                        'rank': 0
-                    })
-        
-        # Sort by market cap and assign ranks
-        components.sort(key=lambda x: x['market_cap'], reverse=True)
-        for i, component in enumerate(components):
-            component['rank'] = i + 1
-            
-        # Check if we have enough components
-        if len(components) < 20:
-            print(f"Warning: Only found {len(components)} components for S&P 500")
-            
-            # Fall back to hardcoded top 20 if we have fewer than 10 components
-            if len(components) < 10:
-                print("Using fallback data for S&P 500")
-                return spy_holdings
-        
+                print(f"Error updating {symbol}: {e}")
+                
         return components
     except Exception as e:
         print(f"Error fetching S&P 500 components: {e}")
@@ -228,12 +184,6 @@ def fetch_qqq_components():
     print("Fetching QQQ (Nasdaq-100) components...")
     
     try:
-        # Get Nasdaq-100 symbols
-        symbols = get_nasdaq100_symbols()
-        
-        # Use cached data as a starting point
-        shares_data = load_shares_outstanding_data()
-        
         # First try to use the hardcoded top 20 data to ensure we have something reliable
         qqq_holdings = [
             {"symbol": "AAPL", "name": "Apple Inc.", "weight": 11.94, "rank": 1},
@@ -258,82 +208,35 @@ def fetch_qqq_components():
             {"symbol": "TXN", "name": "Texas Instruments Inc.", "weight": 1.15, "rank": 20},
         ]
         
-        # Now try to fetch actual market cap data for the top 30 symbols
-        # to update the rankings
+        # Convert qqq_holdings to a dictionary for the output
         components = []
-        
-        # First, prioritize the top 20 from the hardcoded list
-        top_symbols = [item["symbol"] for item in qqq_holdings[:20]]
-        
-        # Only try to fetch data for the top 30 symbols
-        symbols_to_process = top_symbols + [s for s in symbols[:30] if s not in top_symbols]
-        
-        for symbol in symbols_to_process:
-            # Use hardcoded data first
-            hardcoded_item = next((item for item in qqq_holdings if item["symbol"] == symbol), None)
+        for item in qqq_holdings:
+            market_cap = 17_000_000_000_000 * (item["weight"] / 100)
+            components.append({
+                'symbol': item['symbol'],
+                'name': item['name'],
+                'market_cap': market_cap,
+                'rank': item['rank']
+            })
             
-            name = None
-            market_cap = None
+        # Try to update the data for the top few components
+        # But limit API calls to avoid rate limiting
+        for i, component in enumerate(components[:5]):
+            if i > 0:
+                time.sleep(3)  # Add longer delay between requests
+                
+            symbol = component['symbol']
+            print(f"Fetching data for {symbol} ({i+1}/5)...")
             
-            if hardcoded_item:
-                name = hardcoded_item["name"]
-                # Approximate market cap based on Nasdaq-100 total market cap
-                # (roughly $17 trillion as of 2023)
-                market_cap = 17_000_000_000_000 * (hardcoded_item["weight"] / 100)
-            
-            # Try to get real market cap data to improve accuracy
             try:
-                # Check our cache first
-                if symbol in shares_data:
-                    cached_name = shares_data[symbol].get('name')
-                    if cached_name:
-                        name = cached_name
-                
-                # Get fresh ticker data
-                ticker_name, price, ticker_market_cap = get_ticker_data(symbol)
-                
-                # If we got new data, use it
-                if ticker_name:
-                    name = ticker_name
-                if ticker_market_cap:
-                    market_cap = ticker_market_cap
-                    
-                # Add to our components list
-                if name and market_cap:
-                    components.append({
-                        'symbol': symbol,
-                        'name': name,
-                        'market_cap': market_cap,
-                        'rank': 0  # Will fill in later
-                    })
-                    
-                # Brief delay to avoid rate limiting
-                time.sleep(0.2)
+                name, price, market_cap = get_ticker_data(symbol)
+                if name:
+                    component['name'] = name
+                if market_cap:
+                    component['market_cap'] = market_cap
             except Exception as e:
-                print(f"Error processing {symbol}: {e}")
-                # Still add if we have hardcoded data
-                if hardcoded_item:
-                    components.append({
-                        'symbol': symbol,
-                        'name': name,
-                        'market_cap': market_cap,
-                        'rank': 0
-                    })
-        
-        # Sort by market cap and assign ranks
-        components.sort(key=lambda x: x['market_cap'], reverse=True)
-        for i, component in enumerate(components):
-            component['rank'] = i + 1
-            
-        # Check if we have enough components
-        if len(components) < 20:
-            print(f"Warning: Only found {len(components)} components for QQQ")
-            
-            # Fall back to hardcoded top 20 if we have fewer than 10 components
-            if len(components) < 10:
-                print("Using fallback data for QQQ")
-                return qqq_holdings
-        
+                print(f"Error updating {symbol}: {e}")
+                
         return components
     except Exception as e:
         print(f"Error fetching QQQ components: {e}")
