@@ -551,12 +551,12 @@ def main():
     print("Starting index change check...")
     
     try:
-        # Check S&P 500 (SPY holdings)
-        sp500_changes = check_for_changes("S&P 500", SP500_FILE, fetch_spy_holdings)
+        # Check S&P 500
+        sp500_changes = check_for_changes("S&P 500", SP500_FILE, fetch_sp500_components)
         send_email_alert("S&P 500", sp500_changes)
         
         # Check QQQ (Nasdaq-100)
-        qqq_changes = check_for_changes("QQQ", QQQ_FILE, fetch_qqq_holdings)
+        qqq_changes = check_for_changes("QQQ", QQQ_FILE, fetch_qqq_components)
         send_email_alert("QQQ", qqq_changes)
         
         print("Index change check completed successfully")
