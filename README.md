@@ -1,14 +1,15 @@
 # S&P 500 and QQQ Index Change Alert System
 
-This repository contains a GitHub Action that automatically tracks changes in the S&P 500 and QQQ (Nasdaq-100) indices. When changes occur, especially in key positions like the #10 rank, the system sends email notifications with details about the changes.
+This repository contains a GitHub Action that automatically tracks changes in the S&P 500 and QQQ (Nasdaq-100) indices. When changes occur, especially in the top 20 positions, the system sends email notifications with detailed information about the changes.
 
 ## Features
 
 - Daily checks of S&P 500 and QQQ index compositions
 - Detects additions, removals, and rank changes
-- Special focus on the #10 position in indices
-- Email notifications with detailed change information
+- Special focus on the top 20 positions in both indices
+- Enhanced email notifications with highlighted important changes
 - Completely free to run (uses GitHub Actions)
+- Object-oriented design for easy maintenance and extension
 
 ## Setup Instructions
 
@@ -37,18 +38,28 @@ This repository contains a GitHub Action that automatically tracks changes in th
 1. The GitHub Action runs on the defined schedule
 2. It fetches the current composition of both indices
 3. Compares with previously stored data to detect changes
-4. If changes are found, especially in the #10 position, it sends an email alert
+4. If changes are found, especially in the top 20 positions, it sends an email alert
 5. Updates the stored data for the next comparison
+
+## System Architecture
+
+The system uses an object-oriented design with three main components:
+
+1. **IndexTracker**: Handles fetching, storing, and comparing index data
+2. **EmailNotifier**: Manages the creation and sending of email notifications
+3. **Main Script**: Coordinates the overall process and scheduling
 
 ## Customization
 
-- Modify `check_changes.py` to track different index positions or add more indices
-- Adjust the cron schedule in `daily_check.yml` to run at different times
-- Change the email format or add more notification methods
+You can easily customize the system by:
+
+- Changing `TOP_POSITIONS_TO_TRACK` (currently 20) to focus on more or fewer positions
+- Adding more indices by extending the `IndexTracker` class
+- Modifying the email format in the `EmailNotifier` class
+- Adjusting the cron schedule in `daily_check.yml` to run at different times
 
 ## Troubleshooting
 
 - Check the Action logs in the GitHub Actions tab if notifications aren't being sent
 - Ensure your email app password is correct and properly configured
 - For Gmail, make sure "Less secure app access" is enabled or use an app password
-  
