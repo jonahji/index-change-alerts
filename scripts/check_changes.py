@@ -3,15 +3,11 @@ import json
 import time
 import smtplib
 import datetime
-import random
 import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
-
-# Import required libraries at the module level
 import pandas as pd
-import yfinance as yf
 
 # Constants
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -21,181 +17,139 @@ EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 EMAIL_RECIPIENT = os.environ.get("EMAIL_RECIPIENT")
 TOP_POSITIONS_TO_TRACK = 20  # Track top 20 positions in each index
-MAX_RETRIES = 3              # Maximum number of retries for API calls
-RETRY_DELAY = 5              # Base delay between retries in seconds
 
 # Ensure data directory exists
 DATA_DIR.mkdir(exist_ok=True)
 
-def fetch_stock_data(ticker):
+def fetch_spy_holdings():
     """
-    Fetch data for a single stock with retry logic.
-    Returns stock information or None if failed after retries.
+    Fetch current SPY ETF holdings from State Street (S&P 500).
+    Returns a list of dictionaries with symbol, name, and weight.
     """
-    for attempt in range(MAX_RETRIES):
-        try:
-            # Add a small random delay to avoid hitting rate limits
-            time.sleep(random.uniform(0.5, 1.5))
-            
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            return info
-        except Exception as e:
-            if "429" in str(e) and attempt < MAX_RETRIES - 1:
-                # If rate limited, wait longer before retrying
-                wait_time = RETRY_DELAY * (2 ** attempt)  # Exponential backoff
-                print(f"Rate limited for {ticker}, waiting {wait_time}s before retry {attempt+1}/{MAX_RETRIES}")
-                time.sleep(wait_time)
-            else:
-                print(f"Error fetching data for {ticker}: {e}")
-                return None
-    
-    return None
-
-def fetch_sp500_components():
-    """
-    Fetch current S&P 500 components and their market caps.
-    Returns a list of dictionaries with symbol, name, and market cap.
-    """
-    print("Fetching S&P 500 components...")
+    print("Fetching SPY (S&P 500) holdings...")
     
     try:
-        # Try to use existing data first to reduce API calls
-        previous_data = load_previous_data(SP500_FILE)
-        previous_by_symbol = {item["symbol"]: item for item in previous_data} if previous_data else {}
+        # State Street publishes holdings data in CSV format
+        url = "https://www.ssga.com/us/en/individual/etfs/library-content/products/fund-data/etfs/us/holdings-daily-us-en-spy.xlsx"
         
-        # Use Wikipedia table as data source for component list
-        tables = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
-        df = tables[0]
-        
-        # Process top companies first to ensure we at least get data for them
-        # Then process the rest - focus on the top positions
-        top_companies = []
-        other_companies = []
-        
-        # Get market cap data for each component, starting with top companies
-        for idx, row in df.iterrows():
-            ticker = row['Symbol']
-            
-            # Skip tickers with . or - as they often cause issues with yfinance
-            if '.' in ticker or '-' in ticker:
-                continue
-                
-            # Create basic component info
-            component = {
-                "symbol": ticker,
-                "name": row['Security'],
-                "market_cap": 0,
-                "rank": 0
-            }
-            
-            # Check if we have previous data we can use
-            if ticker in previous_by_symbol:
-                # Use market cap from previous data as fallback
-                component["market_cap"] = previous_by_symbol[ticker]["market_cap"]
-                
-            # For top companies, always try to get fresh data
-            if idx < TOP_POSITIONS_TO_TRACK * 3:  # Process more than we need for top positions
-                top_companies.append(component)
-            else:
-                other_companies.append(component)
-        
-        # Get fresh data for top companies first
-        for component in top_companies:
-            ticker = component["symbol"]
-            info = fetch_stock_data(ticker)
-            if info:
-                component["market_cap"] = info.get('marketCap', component["market_cap"])
-        
-        # Then process other companies 
-        for component in other_companies:
-            # Only fetch new data if we don't have market cap from previous data
-            if component["market_cap"] == 0:
-                ticker = component["symbol"]
-                info = fetch_stock_data(ticker)
-                if info:
-                    component["market_cap"] = info.get('marketCap', 0)
-        
-        # Combine and sort all components
-        components = top_companies + other_companies
-        components.sort(key=lambda x: x["market_cap"], reverse=True)
-        
-        # Assign ranks
-        for i, component in enumerate(components):
-            component["rank"] = i + 1
-        
-        # If we have at least 30 components with market cap data, consider it successful
-        if len([c for c in components if c["market_cap"] > 0]) > 30:
-            return components
-        else:
-            print("WARNING: Not enough market cap data retrieved")
+        # Download the Excel file
+        response = requests.get(url)
+        if response.status_code != 200:
+            print(f"Failed to download SPY holdings. Status code: {response.status_code}")
             return []
+            
+        # Save the file temporarily
+        temp_file = DATA_DIR / "spy_holdings_temp.xlsx"
+        with open(temp_file, "wb") as f:
+            f.write(response.content)
+        
+        # Read the Excel file using pandas
+        df = pd.read_excel(temp_file, sheet_name=0, skiprows=3)
+        
+        # Clean up
+        try:
+            os.remove(temp_file)
+        except:
+            pass
+        
+        # Process holdings data
+        holdings = []
+        for _, row in df.iterrows():
+            try:
+                # Column names may change slightly over time - adjust as needed
+                ticker = str(row.get('Ticker') or "")
+                name = str(row.get('Name') or "")
+                weight = float(row.get('Weight') or 0)
+                
+                # Skip cash components and non-stock entries
+                if not ticker or ticker.lower() == 'cash' or ticker.lower() == 'nan':
+                    continue
+                    
+                holdings.append({
+                    "symbol": ticker,
+                    "name": name,
+                    "weight": weight,
+                    "rank": 0  # Will fill in later
+                })
+            except Exception as e:
+                print(f"Error processing SPY holding row: {e}")
+        
+        # Sort by weight and assign ranks
+        holdings.sort(key=lambda x: x["weight"], reverse=True)
+        for i, holding in enumerate(holdings):
+            holding["rank"] = i + 1
+            
+        return holdings
     except Exception as e:
-        print(f"Error fetching S&P 500 components: {e}")
+        print(f"Error fetching SPY holdings: {e}")
         return []
 
-def fetch_qqq_components():
+def fetch_qqq_holdings():
     """
-    Fetch current QQQ (Nasdaq-100) components and their market caps.
-    Returns a list of dictionaries with symbol, name, and market cap.
+    Fetch current QQQ ETF holdings from Invesco (Nasdaq-100).
+    Returns a list of dictionaries with symbol, name, and weight.
     """
-    print("Fetching QQQ components...")
+    print("Fetching QQQ (Nasdaq-100) holdings...")
     
     try:
-        # Try to use existing data first to reduce API calls
-        previous_data = load_previous_data(QQQ_FILE)
-        previous_by_symbol = {item["symbol"]: item for item in previous_data} if previous_data else {}
+        # Invesco publishes holdings data in CSV format
+        url = "https://www.invesco.com/us/financial-products/etfs/holdings/main/holdings/0?audienceType=Investor&action=download&ticker=QQQ"
         
-        # In a production environment, you should use a more reliable source
-        # For this example, we'll use a predefined list of Nasdaq-100 tickers
-        nasdaq100_tickers = [
-            'AAPL', 'MSFT', 'AMZN', 'NVDA', 'GOOGL', 'GOOG', 'META', 'TSLA', 
-            'AVGO', 'ADBE', 'COST', 'PEP', 'CSCO', 'NFLX', 'TMUS', 'CMCSA',
-            'INTC', 'AMD', 'QCOM', 'INTU', 'TXN', 'AMGN', 'HON', 'AMAT',
-            'SBUX', 'ADI', 'MDLZ', 'PYPL', 'REGN', 'GILD', 'LRCX', 'BKNG',
-            'ADP', 'ISRG', 'VRTX', 'PANW', 'SNPS', 'CDNS', 'KLAC', 'ADSK'
-        ]  # This is a partial list - in production you'd fetch the full list
-        
-        # Initialize components with previous data if available
-        components = []
-        for ticker in nasdaq100_tickers:
-            component = {
-                "symbol": ticker,
-                "name": ticker,  # Default name
-                "market_cap": 0,
-                "rank": 0
-            }
-            
-            # Use previous data if available
-            if ticker in previous_by_symbol:
-                component["name"] = previous_by_symbol[ticker]["name"]
-                component["market_cap"] = previous_by_symbol[ticker]["market_cap"]
-                
-            components.append(component)
-        
-        # Process top companies first to ensure we at least get data for them
-        for i, component in enumerate(components):
-            # Only fetch fresh data for top companies or if we have no market cap data
-            if i < TOP_POSITIONS_TO_TRACK * 2 or component["market_cap"] == 0:
-                ticker = component["symbol"]
-                info = fetch_stock_data(ticker)
-                if info:
-                    component["name"] = info.get('shortName', ticker)
-                    component["market_cap"] = info.get('marketCap', component["market_cap"])
-        
-        # Sort by market cap and assign ranks
-        components.sort(key=lambda x: x["market_cap"], reverse=True)
-        for i, component in enumerate(components):
-            component["rank"] = i + 1
-        
-        # If we have at least 15 components with market cap data, consider it successful
-        if len([c for c in components if c["market_cap"] > 0]) > 15:
-            return components
-        else:
-            print("WARNING: Not enough market cap data retrieved for QQQ")
+        # Download the CSV file
+        response = requests.get(url)
+        if response.status_code != 200:
+            print(f"Failed to download QQQ holdings. Status code: {response.status_code}")
             return []
+            
+        # Parse CSV data
+        lines = response.text.splitlines()
+        
+        # Find the data section (skipping headers)
+        start_idx = 0
+        for i, line in enumerate(lines):
+            if "Ticker" in line and "Weight" in line:
+                start_idx = i + 1
+                break
+        
+        # Process holdings data
+        holdings = []
+        for i in range(start_idx, len(lines)):
+            line = lines[i]
+            if not line.strip():
+                continue  # Skip empty lines
+                
+            parts = line.split(',')
+            if len(parts) < 3:
+                continue  # Skip malformed lines
+                
+            try:
+                ticker = parts[0].strip().replace('"', '')
+                name = parts[1].strip().replace('"', '')
+                weight_str = parts[-1].strip().replace('"', '').replace('%', '')
+                
+                # Handle blank or invalid tickers
+                if not ticker or ticker.lower() == 'cash':
+                    continue
+                    
+                weight = float(weight_str) if weight_str else 0
+                
+                holdings.append({
+                    "symbol": ticker,
+                    "name": name,
+                    "weight": weight,
+                    "rank": 0  # Will fill in later
+                })
+            except Exception as e:
+                print(f"Error processing QQQ holding line: {e}")
+        
+        # Sort by weight and assign ranks
+        holdings.sort(key=lambda x: x["weight"], reverse=True)
+        for i, holding in enumerate(holdings):
+            holding["rank"] = i + 1
+            
+        return holdings
     except Exception as e:
-        print(f"Error fetching QQQ components: {e}")
+        print(f"Error fetching QQQ holdings: {e}")
         return []
 
 def load_previous_data(file_path):
@@ -248,7 +202,7 @@ def detect_changes(previous_data, current_data):
     
     for symbol in added:
         item = curr_by_symbol[symbol]
-        message = f"ADDED: {item['name']} ({symbol}) at position #{item['rank']}"
+        message = f"ADDED: {item['name']} ({symbol}) at position #{item['rank']} with weight {item['weight']:.2f}%"
         changes["message"].append(message)
         changes["additions"].append(message)
         
@@ -258,7 +212,7 @@ def detect_changes(previous_data, current_data):
     
     for symbol in removed:
         item = prev_by_symbol[symbol]
-        message = f"REMOVED: {item['name']} ({symbol}) from position #{item['rank']}"
+        message = f"REMOVED: {item['name']} ({symbol}) from position #{item['rank']} (previous weight {item['weight']:.2f}%)"
         changes["message"].append(message)
         changes["removals"].append(message)
         
@@ -270,7 +224,17 @@ def detect_changes(previous_data, current_data):
     for symbol in prev_symbols & curr_symbols:
         prev_rank = prev_by_symbol[symbol]["rank"]
         curr_rank = curr_by_symbol[symbol]["rank"]
+        prev_weight = prev_by_symbol[symbol]["weight"]
+        curr_weight = curr_by_symbol[symbol]["weight"]
         
+        # Check for significant weight changes (more than 0.1 percentage point)
+        weight_change = curr_weight - prev_weight
+        if abs(weight_change) > 0.1:
+            name = curr_by_symbol[symbol]["name"]
+            weight_msg = f"Weight changed from {prev_weight:.2f}% to {curr_weight:.2f}% ({weight_change:+.2f}%)"
+            changes["message"].append(f"WEIGHT CHANGE: {name} ({symbol}) - {weight_msg}")
+        
+        # Check for rank changes
         if prev_rank != curr_rank:
             name = curr_by_symbol[symbol]["name"]
             direction = "up" if curr_rank < prev_rank else "down"
@@ -358,27 +322,22 @@ def check_for_changes(index_name, data_file, fetch_function):
     try:
         print(f"Checking for changes in {index_name}...")
         
-        # Load previous data first - we need this regardless
+        # Load previous data
         previous_data = load_previous_data(data_file)
         
         # Fetch current data
         current_data = fetch_function()
         
         # If this is the first run or we failed to get current data
-        if not previous_data and not current_data:
-            print(f"Initial run for {index_name} but couldn't fetch data. Will try again next time.")
-            return {"message": ["Initial data collection - no data yet."], "top_changes": []}
-        
+        if not current_data:
+            print(f"WARNING: Failed to fetch current {index_name} data")
+            return {"message": [], "top_changes": []}
+            
         # If we have no previous data but got current data, save it for next time
         if not previous_data and current_data:
             print(f"Initial data collection for {index_name} - saving for future comparison")
             save_current_data(current_data, data_file)
             return {"message": ["Initial data collection - no changes to report."], "top_changes": []}
-            
-        # If we failed to get current data but have previous data
-        if not current_data and previous_data:
-            print(f"WARNING: Failed to fetch current {index_name} data, will use previous data")
-            return {"message": [f"Unable to fetch current {index_name} data. Using previous data."], "top_changes": []}
         
         # Detect changes
         changes = detect_changes(previous_data, current_data)
@@ -397,9 +356,8 @@ def check_for_changes(index_name, data_file, fetch_function):
         else:
             print(f"No {index_name} changes detected or initial data collection")
         
-        # Save current data for next time (only if we successfully fetched it)
-        if current_data:
-            save_current_data(current_data, data_file)
+        # Save current data for next time
+        save_current_data(current_data, data_file)
         
         return changes
         
@@ -412,12 +370,12 @@ def main():
     print("Starting index change check...")
     
     try:
-        # Check S&P 500
-        sp500_changes = check_for_changes("S&P 500", SP500_FILE, fetch_sp500_components)
+        # Check S&P 500 (SPY holdings)
+        sp500_changes = check_for_changes("S&P 500", SP500_FILE, fetch_spy_holdings)
         send_email_alert("S&P 500", sp500_changes)
         
-        # Check QQQ
-        qqq_changes = check_for_changes("QQQ", QQQ_FILE, fetch_qqq_components)
+        # Check QQQ (Nasdaq-100)
+        qqq_changes = check_for_changes("QQQ", QQQ_FILE, fetch_qqq_holdings)
         send_email_alert("QQQ", qqq_changes)
         
         print("Index change check completed successfully")

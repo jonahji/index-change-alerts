@@ -1,15 +1,23 @@
 # S&P 500 and QQQ Index Change Alert System
 
-This repository contains a GitHub Action that automatically tracks changes in the S&P 500 and QQQ (Nasdaq-100) indices. When changes occur, especially in the top 20 positions, the system sends email notifications with detailed information about the changes.
+This repository contains a GitHub Action that automatically tracks changes in the S&P 500 and QQQ (Nasdaq-100) indices using official ETF provider data. When changes occur, especially in the top 20 positions, the system sends email notifications with detailed information.
 
 ## Features
 
-- Daily checks of S&P 500 and QQQ index compositions
-- Detects additions, removals, and rank changes
+- Daily checks of S&P 500 and QQQ index compositions using official ETF holdings data
+- Uses State Street (SPY) and Invesco (QQQ) ETF data as the source of truth
+- Detects additions, removals, rank changes, and significant weight changes
 - Special focus on the top 20 positions in both indices
 - Enhanced email notifications with highlighted important changes
 - Completely free to run (uses GitHub Actions)
-- Object-oriented design for easy maintenance and extension
+
+## Why This Approach?
+
+This system uses official ETF holdings data directly from the fund providers, which has several advantages:
+- More reliable than third-party financial APIs
+- No rate limiting issues
+- Contains accurate weight information
+- Includes official ranking of components
 
 ## Setup Instructions
 
@@ -36,30 +44,22 @@ This repository contains a GitHub Action that automatically tracks changes in th
 ## How It Works
 
 1. The GitHub Action runs on the defined schedule
-2. It fetches the current composition of both indices
-3. Compares with previously stored data to detect changes
+2. It downloads the latest holdings data from State Street (SPY) and Invesco (QQQ)
+3. Compares with previously stored data to detect changes in composition and weights
 4. If changes are found, especially in the top 20 positions, it sends an email alert
 5. Updates the stored data for the next comparison
-
-## System Architecture
-
-The system uses an object-oriented design with three main components:
-
-1. **IndexTracker**: Handles fetching, storing, and comparing index data
-2. **EmailNotifier**: Manages the creation and sending of email notifications
-3. **Main Script**: Coordinates the overall process and scheduling
 
 ## Customization
 
 You can easily customize the system by:
 
 - Changing `TOP_POSITIONS_TO_TRACK` (currently 20) to focus on more or fewer positions
-- Adding more indices by extending the `IndexTracker` class
-- Modifying the email format in the `EmailNotifier` class
-- Adjusting the cron schedule in `daily_check.yml` to run at different times
+- Modifying the email format in the `send_email_alert()` function
+- Adjusting the threshold for significant weight changes (currently 0.1%)
+- Changing the cron schedule in `daily_check.yml` to run at different times
 
 ## Troubleshooting
 
 - Check the Action logs in the GitHub Actions tab if notifications aren't being sent
 - Ensure your email app password is correct and properly configured
-- For Gmail, make sure "Less secure app access" is enabled or use an app password
+- If the ETF provider URLs change, you may need to update the URLs in the script
