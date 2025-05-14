@@ -2,6 +2,8 @@ import os
 import json
 import datetime
 import smtplib
+import requests
+import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
@@ -18,12 +20,53 @@ TOP_POSITIONS_TO_TRACK = 20  # Track top 20 positions in each index
 # Ensure data directory exists
 DATA_DIR.mkdir(exist_ok=True)
 
+def fetch_real_data_for_apple():
+    """
+    Fetch real market cap data for Apple using Alpha Vantage free API.
+    This is a simple test function to validate API access works.
+    """
+    try:
+        # Use Alpha Vantage API (free tier)
+        # Limited to 5 API calls per minute and 500 per day
+        api_key = os.environ.get("ALPHA_VANTAGE_API_KEY", "demo")
+        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol=AAPL&apikey={api_key}"
+        
+        print("Fetching real data for Apple (AAPL)...")
+        response = requests.get(url)
+        
+        if response.status_code != 200:
+            print(f"Error: API returned status code {response.status_code}")
+            return None
+            
+        data = response.json()
+        
+        # Check if we got valid data
+        if "MarketCapitalization" not in data:
+            print(f"Warning: No market cap data found for Apple")
+            print(f"API response: {data}")
+            return None
+            
+        market_cap = float(data.get("MarketCapitalization", 0))
+        name = data.get("Name", "Apple Inc.")
+        
+        print(f"Successfully fetched real data for Apple: {name}, Market Cap: ${market_cap/1e9:.2f}B")
+        
+        return {
+            "symbol": "AAPL",
+            "name": name,
+            "market_cap": market_cap,
+            "real_data": True
+        }
+    except Exception as e:
+        print(f"Error fetching real data for Apple: {e}")
+        return None
+
 def get_sp500_components():
     """
-    Get S&P 500 components from hardcoded data.
-    In a production environment, you'd fetch this data dynamically.
+    Get S&P 500 components mostly from hardcoded data,
+    but with real data for Apple as a test.
     """
-    print("Getting S&P 500 top components (hardcoded)...")
+    print("Getting S&P 500 top components...")
     
     # Top 20 S&P 500 components with approximate weights
     sp500_components = [
@@ -49,6 +92,19 @@ def get_sp500_components():
         {"symbol": "HD", "name": "Home Depot, Inc.", "weight": 0.86, "rank": 20}
     ]
     
+    # Try to update Apple with real data
+    real_apple_data = fetch_real_data_for_apple()
+    if real_apple_data:
+        # Find Apple in our list
+        for i, component in enumerate(sp500_components):
+            if component["symbol"] == "AAPL":
+                # Update with real data but keep rank and weight
+                real_apple_data["rank"] = component["rank"]
+                real_apple_data["weight"] = component["weight"]
+                sp500_components[i] = real_apple_data
+                print("Updated Apple with real market cap data")
+                break
+    
     return sp500_components
 
 def get_qqq_components():
@@ -56,7 +112,7 @@ def get_qqq_components():
     Get QQQ (Nasdaq-100) components from hardcoded data.
     In a production environment, you'd fetch this data dynamically.
     """
-    print("Getting QQQ top components (hardcoded)...")
+    print("Getting QQQ top components...")
     
     # Top 20 QQQ components with approximate weights
     qqq_components = [
@@ -81,6 +137,19 @@ def get_qqq_components():
         {"symbol": "QCOM", "name": "Qualcomm Inc.", "weight": 1.19, "rank": 19},
         {"symbol": "TXN", "name": "Texas Instruments Inc.", "weight": 1.15, "rank": 20}
     ]
+    
+    # Try to update Apple with real data
+    real_apple_data = fetch_real_data_for_apple()
+    if real_apple_data:
+        # Find Apple in our list
+        for i, component in enumerate(qqq_components):
+            if component["symbol"] == "AAPL":
+                # Update with real data but keep rank and weight
+                real_apple_data["rank"] = component["rank"]
+                real_apple_data["weight"] = component["weight"]
+                qqq_components[i] = real_apple_data
+                print("Updated Apple with real market cap data")
+                break
     
     return qqq_components
 
