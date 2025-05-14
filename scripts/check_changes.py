@@ -134,7 +134,10 @@ def detect_changes(previous_data, current_data):
     
     for symbol in added:
         item = curr_by_symbol[symbol]
-        message = f"ADDED: {item['name']} ({symbol}) at position #{item['rank']} with weight {item['weight']:.2f}%"
+        weight = item.get('weight', 0)
+        message = f"ADDED: {item['name']} ({symbol}) at position #{item['rank']}"
+        if 'weight' in item:
+            message += f" with weight {weight:.2f}%"
         changes["message"].append(message)
         changes["additions"].append(message)
         
@@ -144,7 +147,10 @@ def detect_changes(previous_data, current_data):
     
     for symbol in removed:
         item = prev_by_symbol[symbol]
-        message = f"REMOVED: {item['name']} ({symbol}) from position #{item['rank']} (previous weight {item['weight']:.2f}%)"
+        weight = item.get('weight', 0)
+        message = f"REMOVED: {item['name']} ({symbol}) from position #{item['rank']}"
+        if 'weight' in item:
+            message += f" (previous weight {weight:.2f}%)"
         changes["message"].append(message)
         changes["removals"].append(message)
         
@@ -156,15 +162,19 @@ def detect_changes(previous_data, current_data):
     for symbol in prev_symbols & curr_symbols:
         prev_rank = prev_by_symbol[symbol]["rank"]
         curr_rank = curr_by_symbol[symbol]["rank"]
-        prev_weight = prev_by_symbol[symbol]["weight"]
-        curr_weight = curr_by_symbol[symbol]["weight"]
+        
+        # Get weights if they exist
+        prev_weight = prev_by_symbol[symbol].get("weight", 0)
+        curr_weight = curr_by_symbol[symbol].get("weight", 0)
         
         # Check for significant weight changes (more than 0.1 percentage point)
-        weight_change = curr_weight - prev_weight
-        if abs(weight_change) > 0.1:
-            name = curr_by_symbol[symbol]["name"]
-            weight_msg = f"Weight changed from {prev_weight:.2f}% to {curr_weight:.2f}% ({weight_change:+.2f}%)"
-            changes["message"].append(f"WEIGHT CHANGE: {name} ({symbol}) - {weight_msg}")
+        # Only if both previous and current data have weight information
+        if 'weight' in prev_by_symbol[symbol] and 'weight' in curr_by_symbol[symbol]:
+            weight_change = curr_weight - prev_weight
+            if abs(weight_change) > 0.1:
+                name = curr_by_symbol[symbol]["name"]
+                weight_msg = f"Weight changed from {prev_weight:.2f}% to {curr_weight:.2f}% ({weight_change:+.2f}%)"
+                changes["message"].append(f"WEIGHT CHANGE: {name} ({symbol}) - {weight_msg}")
         
         # Check for rank changes
         if prev_rank != curr_rank:
@@ -256,19 +266,24 @@ def check_for_changes(index_name, data_file, get_components_function):
         
         # Load previous data
         previous_data = load_previous_data(data_file)
+        print(f"Loaded previous data: {len(previous_data) if previous_data else 0} items")
         
         # For testing, let's simulate a change - move one position in hardcoded data
         if index_name == "QQQ" and previous_data:
             print("SIMULATION: Creating a test change in QQQ data")
             # This is just for testing - we'll move a company up one position
             current_data = get_components_function()
+            print(f"Got current data: {len(current_data)} items")
             if len(current_data) >= 15:
                 # Swap positions 14 and 15 to simulate a change
                 current_data[13], current_data[14] = current_data[14], current_data[13]
                 current_data[13]["rank"], current_data[14]["rank"] = 14, 15
+                print(f"Simulated change: Swapped positions 14 and 15")
         else:
             # Get current components
+            print(f"Getting current data for {index_name}...")
             current_data = get_components_function()
+            print(f"Got current data: {len(current_data)} items")
         
         # If this is the first run
         if not previous_data and current_data:
@@ -276,6 +291,7 @@ def check_for_changes(index_name, data_file, get_components_function):
             save_current_data(current_data, data_file)
             return {"message": ["Initial data collection - no changes to report."], "top_changes": []}
         
+        print(f"Detecting changes for {index_name}...")
         # Detect changes
         changes = detect_changes(previous_data, current_data)
         
@@ -294,12 +310,16 @@ def check_for_changes(index_name, data_file, get_components_function):
             print(f"No {index_name} changes detected or initial data collection")
         
         # Save current data for next time
+        print(f"Saving current data for {index_name}...")
         save_current_data(current_data, data_file)
+        print(f"Data saved to {data_file}")
         
         return changes
         
     except Exception as e:
         print(f"Error checking for changes in {index_name}: {e}")
+        import traceback
+        traceback.print_exc()
         return {"message": [], "top_changes": []}
 
 def main():
