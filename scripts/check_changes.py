@@ -20,18 +20,20 @@ TOP_POSITIONS_TO_TRACK = 20  # Track top 20 positions in each index
 # Ensure data directory exists
 DATA_DIR.mkdir(exist_ok=True)
 
-def fetch_real_data_for_apple():
+def fetch_real_data(symbol, api_key=None):
     """
-    Fetch real market cap data for Apple using Alpha Vantage free API.
+    Fetch real market cap data for a stock using Alpha Vantage API.
     This is a simple test function to validate API access works.
     """
+    if api_key is None:
+        api_key = os.environ.get("ALPHA_VANTAGE_API_KEY", "demo")
+        
     try:
         # Use Alpha Vantage API (free tier)
         # Limited to 5 API calls per minute and 500 per day
-        api_key = os.environ.get("ALPHA_VANTAGE_API_KEY", "demo")
-        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol=AAPL&apikey={api_key}"
+        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={symbol}&apikey={api_key}"
         
-        print("Fetching real data for Apple (AAPL)...")
+        print(f"Fetching real data for {symbol}...")
         response = requests.get(url)
         
         if response.status_code != 200:
@@ -42,29 +44,58 @@ def fetch_real_data_for_apple():
         
         # Check if we got valid data
         if "MarketCapitalization" not in data:
-            print(f"Warning: No market cap data found for Apple")
-            print(f"API response: {data}")
+            print(f"Warning: No market cap data found for {symbol}")
+            if "Note" in data:
+                print(f"API message: {data['Note']}")
             return None
             
         market_cap = float(data.get("MarketCapitalization", 0))
-        name = data.get("Name", "Apple Inc.")
+        name = data.get("Name", f"{symbol} Inc.")
         
-        print(f"Successfully fetched real data for Apple: {name}, Market Cap: ${market_cap/1e9:.2f}B")
+        print(f"Successfully fetched real data for {symbol}: {name}, Market Cap: ${market_cap/1e9:.2f}B")
         
         return {
-            "symbol": "AAPL",
+            "symbol": symbol,
             "name": name,
             "market_cap": market_cap,
             "real_data": True
         }
     except Exception as e:
-        print(f"Error fetching real data for Apple: {e}")
+        print(f"Error fetching real data for {symbol}: {e}")
         return None
+
+def fetch_top_stocks_data(symbols, max_stocks=5):
+    """
+    Fetch real data for multiple stocks, respecting API rate limits.
+    Returns a dictionary of stock data by symbol.
+    """
+    if not symbols:
+        return {}
+        
+    # Limit the number of API calls to respect free tier limits
+    symbols_to_fetch = symbols[:max_stocks]
+    print(f"Fetching real data for top {len(symbols_to_fetch)} stocks: {', '.join(symbols_to_fetch)}")
+    
+    results = {}
+    for i, symbol in enumerate(symbols_to_fetch):
+        # Fetch data for this symbol
+        stock_data = fetch_real_data(symbol)
+        
+        if stock_data:
+            results[symbol] = stock_data
+            
+        # Add delay to respect rate limits (5 calls per minute = 12 seconds between calls)
+        if i < len(symbols_to_fetch) - 1:  # Don't wait after the last request
+            seconds_to_wait = 12
+            print(f"Waiting {seconds_to_wait} seconds before next API call (respecting rate limits)...")
+            time.sleep(seconds_to_wait)
+    
+    print(f"Successfully fetched data for {len(results)} out of {len(symbols_to_fetch)} stocks")
+    return results
 
 def get_sp500_components():
     """
-    Get S&P 500 components mostly from hardcoded data,
-    but with real data for Apple as a test.
+    Get S&P 500 components with real data for the top stocks.
     """
     print("Getting S&P 500 top components...")
     
@@ -92,25 +123,29 @@ def get_sp500_components():
         {"symbol": "HD", "name": "Home Depot, Inc.", "weight": 0.86, "rank": 20}
     ]
     
-    # Try to update Apple with real data
-    real_apple_data = fetch_real_data_for_apple()
-    if real_apple_data:
-        # Find Apple in our list
-        for i, component in enumerate(sp500_components):
-            if component["symbol"] == "AAPL":
-                # Update with real data but keep rank and weight
-                real_apple_data["rank"] = component["rank"]
-                real_apple_data["weight"] = component["weight"]
-                sp500_components[i] = real_apple_data
-                print("Updated Apple with real market cap data")
-                break
+    # Try to update top stocks with real data
+    # Extract symbols of top stocks
+    top_symbols = [component["symbol"] for component in sp500_components[:5]]
+    
+    # Fetch real data for top stocks
+    real_data = fetch_top_stocks_data(top_symbols, max_stocks=3)  # Limit to 3 for now
+    
+    # Update components with real data
+    for i, component in enumerate(sp500_components):
+        symbol = component["symbol"]
+        if symbol in real_data:
+            # Update with real data but keep rank and weight
+            updated_data = real_data[symbol]
+            updated_data["rank"] = component["rank"]
+            updated_data["weight"] = component["weight"]
+            sp500_components[i] = updated_data
+            print(f"Updated {symbol} with real market cap data")
     
     return sp500_components
 
 def get_qqq_components():
     """
-    Get QQQ (Nasdaq-100) components from hardcoded data.
-    In a production environment, you'd fetch this data dynamically.
+    Get QQQ (Nasdaq-100) components with real data for the top stocks.
     """
     print("Getting QQQ top components...")
     
@@ -138,17 +173,20 @@ def get_qqq_components():
         {"symbol": "TXN", "name": "Texas Instruments Inc.", "weight": 1.15, "rank": 20}
     ]
     
-    # Try to update Apple with real data
-    real_apple_data = fetch_real_data_for_apple()
-    if real_apple_data:
-        # Find Apple in our list
+    # Since we already fetched data for SP500, and the top stocks overlap,
+    # we'll just request one additional stock for QQQ to avoid rate limits
+    # We'll request TSLA which is more prominent in QQQ than S&P 500
+    real_data = fetch_real_data("TSLA")
+    
+    if real_data:
+        # Find Tesla in our list
         for i, component in enumerate(qqq_components):
-            if component["symbol"] == "AAPL":
+            if component["symbol"] == "TSLA":
                 # Update with real data but keep rank and weight
-                real_apple_data["rank"] = component["rank"]
-                real_apple_data["weight"] = component["weight"]
-                qqq_components[i] = real_apple_data
-                print("Updated Apple with real market cap data")
+                real_data["rank"] = component["rank"]
+                real_data["weight"] = component["weight"]
+                qqq_components[i] = real_data
+                print("Updated Tesla with real market cap data")
                 break
     
     return qqq_components
@@ -354,37 +392,10 @@ def check_for_changes(index_name, data_file, get_components_function):
         previous_data = load_previous_data(data_file)
         print(f"Loaded previous data: {len(previous_data) if previous_data else 0} items")
         
-        # For testing, let's simulate alternating changes in QQQ rankings
-        if index_name == "QQQ" and previous_data:
-            print("SIMULATION: Creating a test change in QQQ data")
-            current_data = get_components_function()
-            print(f"Got current data: {len(current_data)} items")
-            
-            # Check if we should toggle position 10-11 or position 12-13
-            # by looking at the current order
-            if len(current_data) >= 13:
-                # Find the current positions of key companies
-                adobe_pos = next((i for i, item in enumerate(current_data) if item["symbol"] == "ADBE"), -1)
-                cisco_pos = next((i for i, item in enumerate(current_data) if item["symbol"] == "CSCO"), -1)
-                
-                # If ADBE is after CSCO, swap them
-                if adobe_pos > cisco_pos:
-                    print(f"SIMULATION: Moving Adobe up above Cisco")
-                    # Swap ADBE and CSCO (normally positions 11 and 12)
-                    current_data[adobe_pos], current_data[cisco_pos] = current_data[cisco_pos], current_data[adobe_pos]
-                    current_data[adobe_pos]["rank"], current_data[cisco_pos]["rank"] = current_data[cisco_pos]["rank"], current_data[adobe_pos]["rank"]
-                else:
-                    print(f"SIMULATION: Moving Cisco up above Adobe")
-                    # Put them back in original order
-                    current_data[adobe_pos], current_data[cisco_pos] = current_data[cisco_pos], current_data[adobe_pos]
-                    current_data[adobe_pos]["rank"], current_data[cisco_pos]["rank"] = current_data[cisco_pos]["rank"], current_data[adobe_pos]["rank"]
-                
-                print(f"SIMULATION: New order - {current_data[cisco_pos]['symbol']} #{current_data[cisco_pos]['rank']}, {current_data[adobe_pos]['symbol']} #{current_data[adobe_pos]['rank']}")
-        else:
-            # Get current components
-            print(f"Getting current data for {index_name}...")
-            current_data = get_components_function()
-            print(f"Got current data: {len(current_data)} items")
+        # Get current components 
+        print(f"Getting current data for {index_name}...")
+        current_data = get_components_function()
+        print(f"Got current data: {len(current_data)} items")
         
         # If this is the first run
         if not previous_data and current_data:
