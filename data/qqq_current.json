@@ -60,15 +60,15 @@
     "rank": 10
   },
   {
-    "symbol": "CSCO",
-    "name": "Cisco Systems Inc.",
-    "weight": 1.95,
-    "rank": 11
-  },
-  {
     "symbol": "ADBE",
     "name": "Adobe Inc.",
     "weight": 1.92,
+    "rank": 11
+  },
+  {
+    "symbol": "CSCO",
+    "name": "Cisco Systems Inc.",
+    "weight": 1.95,
     "rank": 12
   },
   {
@@ -78,15 +78,15 @@
     "rank": 13
   },
   {
-    "symbol": "PEP",
-    "name": "PepsiCo Inc.",
-    "weight": 1.47,
-    "rank": 14
-  },
-  {
     "symbol": "AMD",
     "name": "Advanced Micro Devices Inc.",
     "weight": 1.49,
+    "rank": 14
+  },
+  {
+    "symbol": "PEP",
+    "name": "PepsiCo Inc.",
+    "weight": 1.47,
     "rank": 15
   },
   {
