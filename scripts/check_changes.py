@@ -198,9 +198,20 @@ def send_email_alert(index_name, changes):
         print(f"No changes to report for {index_name}")
         return
     
-    if not EMAIL_SENDER or not EMAIL_PASSWORD or not EMAIL_RECIPIENT:
-        print("Email configuration missing. Cannot send notification.")
+    # Check email configuration
+    if not EMAIL_SENDER:
+        print("Email configuration missing: EMAIL_SENDER environment variable not set")
         return
+    if not EMAIL_PASSWORD:
+        print("Email configuration missing: EMAIL_PASSWORD environment variable not set")
+        return
+    if not EMAIL_RECIPIENT:
+        print("Email configuration missing: EMAIL_RECIPIENT environment variable not set")
+        return
+        
+    print(f"Preparing email alert for {index_name} changes...")
+    print(f"Sender: {EMAIL_SENDER}")
+    print(f"Recipient: {EMAIL_RECIPIENT}")
     
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     
@@ -250,15 +261,21 @@ def send_email_alert(index_name, changes):
     msg.attach(MIMEText(body, 'html'))
     
     try:
+        print("Connecting to Gmail SMTP server...")
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
+        print("Logging in to Gmail...")
         server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+        print("Sending email...")
         server.send_message(msg)
         server.quit()
         print(f"Email alert sent for {index_name} changes")
     except Exception as e:
         print(f"Error sending email: {e}")
-
+        print("\nTroubleshooting Gmail authentication issues:")
+        print("1. Make sure you're using an App Password for EMAIL_PASSWORD, not your regular Gmail password")
+        print("2. Generate an App Password at: https://myaccount.google.com/apppasswords")
+        print("3. In GitHub repository settings, update the EMAIL_APP_PASSWORD secret with the new App Password")
 def check_for_changes(index_name, data_file, get_components_function):
     """Check for changes in the index and return detected changes."""
     try:
