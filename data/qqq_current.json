@@ -1,0 +1,122 @@
+[
+  {
+    "symbol": "AAPL",
+    "name": "Apple Inc.",
+    "weight": 11.94,
+    "rank": 1
+  },
+  {
+    "symbol": "MSFT",
+    "name": "Microsoft Corp.",
+    "weight": 10.2,
+    "rank": 2
+  },
+  {
+    "symbol": "NVDA",
+    "name": "NVIDIA Corp.",
+    "weight": 7.52,
+    "rank": 3
+  },
+  {
+    "symbol": "AMZN",
+    "name": "Amazon.com Inc.",
+    "weight": 6.82,
+    "rank": 4
+  },
+  {
+    "symbol": "META",
+    "name": "Meta Platforms Inc. Class A",
+    "weight": 4.99,
+    "rank": 5
+  },
+  {
+    "symbol": "TSLA",
+    "name": "Tesla Inc.",
+    "weight": 3.53,
+    "rank": 6
+  },
+  {
+    "symbol": "GOOG",
+    "name": "Alphabet Inc. Class C",
+    "weight": 3.49,
+    "rank": 7
+  },
+  {
+    "symbol": "GOOGL",
+    "name": "Alphabet Inc. Class A",
+    "weight": 3.15,
+    "rank": 8
+  },
+  {
+    "symbol": "AVGO",
+    "name": "Broadcom Inc.",
+    "weight": 2.79,
+    "rank": 9
+  },
+  {
+    "symbol": "COST",
+    "name": "Costco Wholesale Corp.",
+    "weight": 2.21,
+    "rank": 10
+  },
+  {
+    "symbol": "CSCO",
+    "name": "Cisco Systems Inc.",
+    "weight": 1.95,
+    "rank": 11
+  },
+  {
+    "symbol": "ADBE",
+    "name": "Adobe Inc.",
+    "weight": 1.92,
+    "rank": 12
+  },
+  {
+    "symbol": "TMUS",
+    "name": "T-Mobile US Inc.",
+    "weight": 1.87,
+    "rank": 13
+  },
+  {
+    "symbol": "AMD",
+    "name": "Advanced Micro Devices Inc.",
+    "weight": 1.49,
+    "rank": 14
+  },
+  {
+    "symbol": "PEP",
+    "name": "PepsiCo Inc.",
+    "weight": 1.47,
+    "rank": 15
+  },
+  {
+    "symbol": "NFLX",
+    "name": "Netflix Inc.",
+    "weight": 1.38,
+    "rank": 16
+  },
+  {
+    "symbol": "CMCSA",
+    "name": "Comcast Corp. Class A",
+    "weight": 1.37,
+    "rank": 17
+  },
+  {
+    "symbol": "INTU",
+    "name": "Intuit Inc.",
+    "weight": 1.33,
+    "rank": 18
+  },
+  {
+    "symbol": "QCOM",
+    "name": "Qualcomm Inc.",
+    "weight": 1.19,
+    "rank": 19
+  },
+  {
+    "symbol": "TXN",
+    "name": "Texas Instruments Inc.",
+    "weight": 1.15,
+    "rank": 20
+  }
+]
