@@ -1,9 +1,11 @@
 [
   {
     "symbol": "AAPL",
-    "name": "Apple Inc.",
-    "weight": 11.94,
-    "rank": 1
+    "name": "Apple Inc",
+    "market_cap": 3180279628000.0,
+    "real_data": true,
+    "rank": 1,
+    "weight": 11.94
   },
   {
     "symbol": "MSFT",
