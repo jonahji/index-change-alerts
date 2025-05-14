@@ -73,22 +73,28 @@ def fetch_batch_data(symbols):
         # Request all tickers at once (much more efficient)
         tickers = yf.Tickers(symbol_str)
         
-        # Get last market data in one batch request
-        data = tickers.history(period="2d")
+        # Get market data with a longer period to ensure we have data
+        # Using 1 month instead of 2 days
+        data = tickers.history(period="1mo")
         
-        # Get the latest closing prices
+        # Get the latest available closing prices
+        latest_prices = {}
         if 'Close' in data:
-            latest_prices = data['Close'].iloc[-1]
-        else:
-            print("Warning: Could not get latest prices")
-            latest_prices = {}
+            # Get the most recent non-NaN data for each symbol
+            for symbol in symbols:
+                if symbol in data['Close'].columns:
+                    prices = data['Close'][symbol].dropna()
+                    if not prices.empty:
+                        latest_prices[symbol] = prices.iloc[-1]
         
-        # Get the latest volumes
+        # Get the latest volumes (with the same approach)
+        latest_volumes = {}
         if 'Volume' in data:
-            latest_volumes = data['Volume'].iloc[-1]
-        else:
-            print("Warning: Could not get latest volumes")
-            latest_volumes = {}
+            for symbol in symbols:
+                if symbol in data['Volume'].columns:
+                    volumes = data['Volume'][symbol].dropna()
+                    if not volumes.empty:
+                        latest_volumes[symbol] = volumes.iloc[-1]
         
         # Load cached shares outstanding data if available
         shares_data = load_shares_outstanding_data()
@@ -97,11 +103,13 @@ def fetch_batch_data(symbols):
         results = {}
         for symbol in symbols:
             try:
-                price = latest_prices.get(symbol)
-                volume = latest_volumes.get(symbol)
-                
-                if price is None:
+                # Skip if we couldn't get price data
+                if symbol not in latest_prices:
+                    print(f"No price data found for {symbol}, skipping")
                     continue
+                    
+                price = latest_prices.get(symbol)
+                volume = latest_volumes.get(symbol, 0)
                 
                 # If we don't have shares data, try to get it
                 if symbol not in shares_data:
