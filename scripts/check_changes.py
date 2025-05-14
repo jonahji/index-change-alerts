@@ -8,124 +8,329 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 import pandas as pd
+import yfinance as yf
 
 # Constants
 DATA_DIR = Path(__file__).parent.parent / "data"
 SP500_FILE = DATA_DIR / "sp500_current.json"
 QQQ_FILE = DATA_DIR / "qqq_current.json"
+SHARES_DATA_FILE = DATA_DIR / "shares_outstanding.json"  # For caching shares outstanding data
 EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 EMAIL_RECIPIENT = os.environ.get("EMAIL_RECIPIENT")
 TOP_POSITIONS_TO_TRACK = 20  # Track top 20 positions in each index
+BATCH_SIZE = 100  # How many stocks to request at once in batch mode
 
 # Ensure data directory exists
 DATA_DIR.mkdir(exist_ok=True)
 
-def fetch_spy_holdings():
-    """
-    Fetch current SPY ETF holdings from State Street (S&P 500).
-    Returns a list of dictionaries with symbol, name, and weight.
-    """
-    print("Fetching SPY (S&P 500) holdings...")
-    
+def get_sp500_symbols():
+    """Get S&P 500 component symbols from Wikipedia."""
     try:
-        # Instead of trying to download the XLSX file which requires openpyxl,
-        # We'll use a simplified approach with the top SPY holdings
-        # In production, you should implement a more complete solution
-        
-        # Top SPY holdings with approximate weights
-        spy_holdings = [
-            {"symbol": "AAPL", "name": "Apple Inc.", "weight": 7.24},
-            {"symbol": "MSFT", "name": "Microsoft Corporation", "weight": 6.85},
-            {"symbol": "NVDA", "name": "NVIDIA Corporation", "weight": 5.01},
-            {"symbol": "AMZN", "name": "Amazon.com Inc.", "weight": 3.59},
-            {"symbol": "META", "name": "Meta Platforms Inc. Class A", "weight": 2.34},
-            {"symbol": "GOOG", "name": "Alphabet Inc. Class C", "weight": 1.98},
-            {"symbol": "GOOGL", "name": "Alphabet Inc. Class A", "weight": 1.71},
-            {"symbol": "BRK.B", "name": "Berkshire Hathaway Inc. Class B", "weight": 1.69},
-            {"symbol": "TSLA", "name": "Tesla, Inc.", "weight": 1.67},
-            {"symbol": "AVGO", "name": "Broadcom Inc.", "weight": 1.34},
-            {"symbol": "UNH", "name": "UnitedHealth Group Incorporated", "weight": 1.32},
-            {"symbol": "JPM", "name": "JPMorgan Chase & Co.", "weight": 1.22},
-            {"symbol": "XOM", "name": "Exxon Mobil Corporation", "weight": 1.19},
-            {"symbol": "LLY", "name": "Eli Lilly and Company", "weight": 1.16},
-            {"symbol": "V", "name": "Visa Inc. Class A", "weight": 1.10},
-            {"symbol": "COST", "name": "Costco Wholesale Corporation", "weight": 1.04},
-            {"symbol": "JNJ", "name": "Johnson & Johnson", "weight": 1.02},
-            {"symbol": "MA", "name": "Mastercard Incorporated Class A", "weight": 0.94},
-            {"symbol": "PG", "name": "Procter & Gamble Company", "weight": 0.91},
-            {"symbol": "HD", "name": "Home Depot, Inc.", "weight": 0.86},
-        ]
-        
-        # Assign ranks based on weight
-        for i, holding in enumerate(spy_holdings):
-            holding["rank"] = i + 1
-            
-        return spy_holdings
+        tables = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
+        df = tables[0]
+        return df['Symbol'].tolist()
     except Exception as e:
-        print(f"Error fetching SPY holdings: {e}")
+        print(f"Error fetching S&P 500 symbols: {e}")
         return []
 
-def fetch_qqq_holdings():
+def get_nasdaq100_symbols():
+    """Get Nasdaq-100 component symbols."""
+    try:
+        # Using a predefined list for simplicity
+        # In production, you could scrape this from nasdaq.com
+        nasdaq100_tickers = [
+            'AAPL', 'MSFT', 'AMZN', 'NVDA', 'GOOGL', 'GOOG', 'META', 'TSLA', 
+            'AVGO', 'ADBE', 'COST', 'PEP', 'CSCO', 'NFLX', 'TMUS', 'CMCSA',
+            'INTC', 'AMD', 'QCOM', 'INTU', 'TXN', 'AMGN', 'HON', 'AMAT',
+            'SBUX', 'ADI', 'MDLZ', 'PYPL', 'REGN', 'GILD', 'LRCX', 'BKNG',
+            'ADP', 'ISRG', 'VRTX', 'PANW', 'SNPS', 'CDNS', 'KLAC', 'ADSK',
+            'MU', 'MNST', 'CHTR', 'MAR', 'CTAS', 'FTNT', 'ABNB', 'CRWD',
+            'PCAR', 'MELI', 'KDP', 'XEL', 'ORLY', 'KHC', 'AEP', 'MRNA',
+            'PAYX', 'ASML', 'FAST', 'DXCM', 'EXC', 'BIIB', 'ODFL', 'EA',
+            'IDXX', 'VRSK', 'LCID', 'EBAY', 'CPRT', 'ROST', 'WBD', 'CTSH',
+            'ZS', 'ILMN', 'AZN', 'DDOG', 'WBA', 'NXPI', 'DLTR', 'TEAM',
+            'ANSS', 'SGEN', 'JD', 'SIRI', 'ALGN', 'SPLK', 'MTCH', 'RIVN',
+            'ZM', 'VRSN', 'SWKS', 'CDW', 'ENPH', 'OKTA', 'WDAY', 'DOCU'
+        ]
+        return nasdaq100_tickers
+    except Exception as e:
+        print(f"Error fetching Nasdaq-100 symbols: {e}")
+        return []
+
+def fetch_batch_data(symbols):
     """
-    Fetch current QQQ ETF holdings from Invesco (Nasdaq-100).
-    Returns a list of dictionaries with symbol, name, and weight.
+    Fetch data for multiple symbols in a single batch request.
+    Returns a dictionary of company data.
     """
-    print("Fetching QQQ (Nasdaq-100) holdings...")
+    if not symbols:
+        return {}
     
     try:
-        # Alternative approach: use the JSON data source from Invesco
-        url = "https://www.invesco.com/us/financial-products/etfs/product-detail?audienceType=Investor&ticker=QQQ"
+        # Convert symbols to a space-separated string for batch request
+        symbol_str = " ".join(symbols)
         
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
+        # Request all tickers at once (much more efficient)
+        tickers = yf.Tickers(symbol_str)
         
-        # Get the page to find the JSON data
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            print(f"Failed to access QQQ page. Status code: {response.status_code}")
-            return []
+        # Get last market data in one batch request
+        data = tickers.history(period="2d")
         
-        # Extract JSON data - this is a more reliable method
-        # Rather than trying to parse the CSV which has format issues
+        # Get the latest closing prices
+        if 'Close' in data:
+            latest_prices = data['Close'].iloc[-1]
+        else:
+            print("Warning: Could not get latest prices")
+            latest_prices = {}
         
-        # Simplified approach: Extract weight data directly from website's Top 10 holdings
-        # This is a fallback approach that at least gives us the top holdings
-        # For a full solution, you would extract the complete holdings JSON data
+        # Get the latest volumes
+        if 'Volume' in data:
+            latest_volumes = data['Volume'].iloc[-1]
+        else:
+            print("Warning: Could not get latest volumes")
+            latest_volumes = {}
         
-        # For now, let's use a simplified list of the top QQQ holdings with approximate weights
-        # In a production environment, you'd extract this data programmatically
-        qqq_holdings = [
-            {"symbol": "AAPL", "name": "Apple Inc.", "weight": 11.94},
-            {"symbol": "MSFT", "name": "Microsoft Corp.", "weight": 10.20},
-            {"symbol": "NVDA", "name": "NVIDIA Corp.", "weight": 7.52},
-            {"symbol": "AMZN", "name": "Amazon.com Inc.", "weight": 6.82},
-            {"symbol": "META", "name": "Meta Platforms Inc. Class A", "weight": 4.99},
-            {"symbol": "TSLA", "name": "Tesla Inc.", "weight": 3.53},
-            {"symbol": "GOOG", "name": "Alphabet Inc. Class C", "weight": 3.49},
-            {"symbol": "GOOGL", "name": "Alphabet Inc. Class A", "weight": 3.15},
-            {"symbol": "AVGO", "name": "Broadcom Inc.", "weight": 2.79},
-            {"symbol": "COST", "name": "Costco Wholesale Corp.", "weight": 2.21},
-            {"symbol": "CSCO", "name": "Cisco Systems Inc.", "weight": 1.95},
-            {"symbol": "ADBE", "name": "Adobe Inc.", "weight": 1.92},
-            {"symbol": "TMUS", "name": "T-Mobile US Inc.", "weight": 1.87},
-            {"symbol": "AMD", "name": "Advanced Micro Devices Inc.", "weight": 1.49},
-            {"symbol": "PEP", "name": "PepsiCo Inc.", "weight": 1.47},
-            {"symbol": "NFLX", "name": "Netflix Inc.", "weight": 1.38},
-            {"symbol": "CMCSA", "name": "Comcast Corp. Class A", "weight": 1.37},
-            {"symbol": "INTU", "name": "Intuit Inc.", "weight": 1.33},
-            {"symbol": "QCOM", "name": "Qualcomm Inc.", "weight": 1.19},
-            {"symbol": "TXN", "name": "Texas Instruments Inc.", "weight": 1.15},
-        ]
+        # Load cached shares outstanding data if available
+        shares_data = load_shares_outstanding_data()
         
-        # Assign ranks based on weight
-        for i, holding in enumerate(qqq_holdings):
-            holding["rank"] = i + 1
-            
-        return qqq_holdings
+        # Process each symbol and calculate estimated market cap
+        results = {}
+        for symbol in symbols:
+            try:
+                price = latest_prices.get(symbol)
+                volume = latest_volumes.get(symbol)
+                
+                if price is None:
+                    continue
+                
+                # If we don't have shares data, try to get it
+                if symbol not in shares_data:
+                    try:
+                        # Get shares outstanding - this will be a single request
+                        # But we'll only do it for symbols we don't already have
+                        ticker = yf.Ticker(symbol)
+                        info = ticker.info
+                        
+                        # Get the important fields
+                        shares_outstanding = info.get('sharesOutstanding') or info.get('impliedSharesOutstanding')
+                        company_name = info.get('shortName') or info.get('longName') or symbol
+                        
+                        # Cache the data
+                        shares_data[symbol] = {
+                            'name': company_name,
+                            'shares': shares_outstanding
+                        }
+                    except Exception as e:
+                        print(f"Error getting info for {symbol}: {e}")
+                
+                # Use cached data if available
+                if symbol in shares_data:
+                    company_name = shares_data[symbol]['name']
+                    shares = shares_data[symbol]['shares']
+                    
+                    # Calculate market cap if we have shares data
+                    if shares:
+                        market_cap = price * shares
+                    else:
+                        market_cap = price * 1000000000  # Use a default value if no shares data
+                else:
+                    company_name = symbol
+                    market_cap = price * 1000000000  # Use a default value if no data
+                
+                results[symbol] = {
+                    'symbol': symbol,
+                    'name': company_name,
+                    'market_cap': market_cap,
+                    'price': price,
+                    'volume': volume
+                }
+            except Exception as e:
+                print(f"Error processing data for {symbol}: {e}")
+        
+        # Save updated shares data
+        save_shares_outstanding_data(shares_data)
+        
+        return results
     except Exception as e:
-        print(f"Error fetching QQQ holdings: {e}")
+        print(f"Error in batch data fetch: {e}")
+        return {}
+
+def load_shares_outstanding_data():
+    """Load cached shares outstanding data."""
+    try:
+        if SHARES_DATA_FILE.exists():
+            with open(SHARES_DATA_FILE, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Error loading shares data: {e}")
+    return {}
+
+def save_shares_outstanding_data(data):
+    """Save shares outstanding data to cache file."""
+    try:
+        with open(SHARES_DATA_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving shares data: {e}")
+
+def fetch_sp500_components():
+    """
+    Fetch current S&P 500 components and their market caps using batch requests.
+    Returns a list of dictionaries with symbol, name, and market cap.
+    """
+    print("Fetching S&P 500 components...")
+    
+    try:
+        # Get S&P 500 symbols
+        symbols = get_sp500_symbols()
+        
+        # Process symbols in batches to avoid timeouts
+        results = {}
+        for i in range(0, len(symbols), BATCH_SIZE):
+            batch = symbols[i:i+BATCH_SIZE]
+            batch_results = fetch_batch_data(batch)
+            results.update(batch_results)
+            
+            # Small delay between batches
+            if i + BATCH_SIZE < len(symbols):
+                time.sleep(1)
+        
+        # Convert to list and sort by market cap
+        components = []
+        for symbol, data in results.items():
+            components.append({
+                'symbol': symbol,
+                'name': data['name'],
+                'market_cap': data['market_cap'],
+                'rank': 0  # Will fill in later
+            })
+        
+        # Sort by market cap and assign ranks
+        components.sort(key=lambda x: x['market_cap'], reverse=True)
+        for i, component in enumerate(components):
+            component['rank'] = i + 1
+            
+        # Check if we have enough components
+        if len(components) < 20:
+            print(f"Warning: Only found {len(components)} components for S&P 500")
+            
+            # Fallback to previous hardcoded list if too few components
+            if len(components) < 10:
+                print("Using fallback data for S&P 500")
+                
+                # Load previous data first
+                previous_data = load_previous_data(SP500_FILE)
+                if previous_data and len(previous_data) >= 20:
+                    return previous_data
+                    
+                # If no previous data, use hardcoded top 20
+                spy_holdings = [
+                    {"symbol": "AAPL", "name": "Apple Inc.", "weight": 7.24, "rank": 1},
+                    {"symbol": "MSFT", "name": "Microsoft Corporation", "weight": 6.85, "rank": 2},
+                    {"symbol": "NVDA", "name": "NVIDIA Corporation", "weight": 5.01, "rank": 3},
+                    {"symbol": "AMZN", "name": "Amazon.com Inc.", "weight": 3.59, "rank": 4},
+                    {"symbol": "META", "name": "Meta Platforms Inc. Class A", "weight": 2.34, "rank": 5},
+                    {"symbol": "GOOG", "name": "Alphabet Inc. Class C", "weight": 1.98, "rank": 6},
+                    {"symbol": "GOOGL", "name": "Alphabet Inc. Class A", "weight": 1.71, "rank": 7},
+                    {"symbol": "BRK.B", "name": "Berkshire Hathaway Inc. Class B", "weight": 1.69, "rank": 8},
+                    {"symbol": "TSLA", "name": "Tesla, Inc.", "weight": 1.67, "rank": 9},
+                    {"symbol": "AVGO", "name": "Broadcom Inc.", "weight": 1.34, "rank": 10},
+                    {"symbol": "UNH", "name": "UnitedHealth Group Incorporated", "weight": 1.32, "rank": 11},
+                    {"symbol": "JPM", "name": "JPMorgan Chase & Co.", "weight": 1.22, "rank": 12},
+                    {"symbol": "XOM", "name": "Exxon Mobil Corporation", "weight": 1.19, "rank": 13},
+                    {"symbol": "LLY", "name": "Eli Lilly and Company", "weight": 1.16, "rank": 14},
+                    {"symbol": "V", "name": "Visa Inc. Class A", "weight": 1.10, "rank": 15},
+                    {"symbol": "COST", "name": "Costco Wholesale Corporation", "weight": 1.04, "rank": 16},
+                    {"symbol": "JNJ", "name": "Johnson & Johnson", "weight": 1.02, "rank": 17},
+                    {"symbol": "MA", "name": "Mastercard Incorporated Class A", "weight": 0.94, "rank": 18},
+                    {"symbol": "PG", "name": "Procter & Gamble Company", "weight": 0.91, "rank": 19},
+                    {"symbol": "HD", "name": "Home Depot, Inc.", "weight": 0.86, "rank": 20},
+                ]
+                return spy_holdings
+        
+        return components
+    except Exception as e:
+        print(f"Error fetching S&P 500 components: {e}")
+        return []
+
+def fetch_qqq_components():
+    """
+    Fetch current QQQ (Nasdaq-100) components and their market caps using batch requests.
+    Returns a list of dictionaries with symbol, name, and market cap.
+    """
+    print("Fetching QQQ (Nasdaq-100) components...")
+    
+    try:
+        # Get Nasdaq-100 symbols
+        symbols = get_nasdaq100_symbols()
+        
+        # Process symbols in batches to avoid timeouts
+        results = {}
+        for i in range(0, len(symbols), BATCH_SIZE):
+            batch = symbols[i:i+BATCH_SIZE]
+            batch_results = fetch_batch_data(batch)
+            results.update(batch_results)
+            
+            # Small delay between batches
+            if i + BATCH_SIZE < len(symbols):
+                time.sleep(1)
+        
+        # Convert to list and sort by market cap
+        components = []
+        for symbol, data in results.items():
+            components.append({
+                'symbol': symbol,
+                'name': data['name'],
+                'market_cap': data['market_cap'],
+                'rank': 0  # Will fill in later
+            })
+        
+        # Sort by market cap and assign ranks
+        components.sort(key=lambda x: x['market_cap'], reverse=True)
+        for i, component in enumerate(components):
+            component['rank'] = i + 1
+            
+        # Check if we have enough components
+        if len(components) < 20:
+            print(f"Warning: Only found {len(components)} components for QQQ")
+            
+            # Fallback to previous hardcoded list if too few components
+            if len(components) < 10:
+                print("Using fallback data for QQQ")
+                
+                # Load previous data first
+                previous_data = load_previous_data(QQQ_FILE)
+                if previous_data and len(previous_data) >= 20:
+                    return previous_data
+                    
+                # If no previous data, use hardcoded top 20
+                qqq_holdings = [
+                    {"symbol": "AAPL", "name": "Apple Inc.", "weight": 11.94, "rank": 1},
+                    {"symbol": "MSFT", "name": "Microsoft Corp.", "weight": 10.20, "rank": 2},
+                    {"symbol": "NVDA", "name": "NVIDIA Corp.", "weight": 7.52, "rank": 3},
+                    {"symbol": "AMZN", "name": "Amazon.com Inc.", "weight": 6.82, "rank": 4},
+                    {"symbol": "META", "name": "Meta Platforms Inc. Class A", "weight": 4.99, "rank": 5},
+                    {"symbol": "TSLA", "name": "Tesla Inc.", "weight": 3.53, "rank": 6},
+                    {"symbol": "GOOG", "name": "Alphabet Inc. Class C", "weight": 3.49, "rank": 7},
+                    {"symbol": "GOOGL", "name": "Alphabet Inc. Class A", "weight": 3.15, "rank": 8},
+                    {"symbol": "AVGO", "name": "Broadcom Inc.", "weight": 2.79, "rank": 9},
+                    {"symbol": "COST", "name": "Costco Wholesale Corp.", "weight": 2.21, "rank": 10},
+                    {"symbol": "CSCO", "name": "Cisco Systems Inc.", "weight": 1.95, "rank": 11},
+                    {"symbol": "ADBE", "name": "Adobe Inc.", "weight": 1.92, "rank": 12},
+                    {"symbol": "TMUS", "name": "T-Mobile US Inc.", "weight": 1.87, "rank": 13},
+                    {"symbol": "AMD", "name": "Advanced Micro Devices Inc.", "weight": 1.49, "rank": 14},
+                    {"symbol": "PEP", "name": "PepsiCo Inc.", "weight": 1.47, "rank": 15},
+                    {"symbol": "NFLX", "name": "Netflix Inc.", "weight": 1.38, "rank": 16},
+                    {"symbol": "CMCSA", "name": "Comcast Corp. Class A", "weight": 1.37, "rank": 17},
+                    {"symbol": "INTU", "name": "Intuit Inc.", "weight": 1.33, "rank": 18},
+                    {"symbol": "QCOM", "name": "Qualcomm Inc.", "weight": 1.19, "rank": 19},
+                    {"symbol": "TXN", "name": "Texas Instruments Inc.", "weight": 1.15, "rank": 20},
+                ]
+                return qqq_holdings
+        
+        return components
+    except Exception as e:
+        print(f"Error fetching QQQ components: {e}")
         return []
 
 def load_previous_data(file_path):
