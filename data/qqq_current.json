@@ -1,11 +1,9 @@
 [
   {
     "symbol": "AAPL",
-    "name": "Apple Inc",
-    "market_cap": 3180279628000.0,
-    "real_data": true,
-    "rank": 1,
-    "weight": 11.94
+    "name": "Apple Inc.",
+    "weight": 11.94,
+    "rank": 1
   },
   {
     "symbol": "MSFT",
@@ -33,9 +31,11 @@
   },
   {
     "symbol": "TSLA",
-    "name": "Tesla Inc.",
-    "weight": 3.53,
-    "rank": 6
+    "name": "Tesla Inc",
+    "market_cap": 1025489240000.0,
+    "real_data": true,
+    "rank": 6,
+    "weight": 3.53
   },
   {
     "symbol": "GOOG",
@@ -62,15 +62,15 @@
     "rank": 10
   },
   {
-    "symbol": "ADBE",
-    "name": "Adobe Inc.",
-    "weight": 1.92,
-    "rank": 11
-  },
-  {
     "symbol": "CSCO",
     "name": "Cisco Systems Inc.",
     "weight": 1.95,
+    "rank": 11
+  },
+  {
+    "symbol": "ADBE",
+    "name": "Adobe Inc.",
+    "weight": 1.92,
     "rank": 12
   },
   {
