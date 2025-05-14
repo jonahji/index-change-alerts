@@ -285,17 +285,32 @@ def check_for_changes(index_name, data_file, get_components_function):
         previous_data = load_previous_data(data_file)
         print(f"Loaded previous data: {len(previous_data) if previous_data else 0} items")
         
-        # For testing, let's simulate a change - move one position in hardcoded data
+        # For testing, let's simulate alternating changes in QQQ rankings
         if index_name == "QQQ" and previous_data:
             print("SIMULATION: Creating a test change in QQQ data")
-            # This is just for testing - we'll move a company up one position
             current_data = get_components_function()
             print(f"Got current data: {len(current_data)} items")
-            if len(current_data) >= 15:
-                # Swap positions 14 and 15 to simulate a change
-                current_data[13], current_data[14] = current_data[14], current_data[13]
-                current_data[13]["rank"], current_data[14]["rank"] = 14, 15
-                print(f"Simulated change: Swapped positions 14 and 15")
+            
+            # Check if we should toggle position 10-11 or position 12-13
+            # by looking at the current order
+            if len(current_data) >= 13:
+                # Find the current positions of key companies
+                adobe_pos = next((i for i, item in enumerate(current_data) if item["symbol"] == "ADBE"), -1)
+                cisco_pos = next((i for i, item in enumerate(current_data) if item["symbol"] == "CSCO"), -1)
+                
+                # If ADBE is after CSCO, swap them
+                if adobe_pos > cisco_pos:
+                    print(f"SIMULATION: Moving Adobe up above Cisco")
+                    # Swap ADBE and CSCO (normally positions 11 and 12)
+                    current_data[adobe_pos], current_data[cisco_pos] = current_data[cisco_pos], current_data[adobe_pos]
+                    current_data[adobe_pos]["rank"], current_data[cisco_pos]["rank"] = current_data[cisco_pos]["rank"], current_data[adobe_pos]["rank"]
+                else:
+                    print(f"SIMULATION: Moving Cisco up above Adobe")
+                    # Put them back in original order
+                    current_data[adobe_pos], current_data[cisco_pos] = current_data[cisco_pos], current_data[adobe_pos]
+                    current_data[adobe_pos]["rank"], current_data[cisco_pos]["rank"] = current_data[cisco_pos]["rank"], current_data[adobe_pos]["rank"]
+                
+                print(f"SIMULATION: New order - {current_data[cisco_pos]['symbol']} #{current_data[cisco_pos]['rank']}, {current_data[adobe_pos]['symbol']} #{current_data[adobe_pos]['rank']}")
         else:
             # Get current components
             print(f"Getting current data for {index_name}...")
