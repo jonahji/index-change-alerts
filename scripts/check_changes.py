@@ -176,13 +176,10 @@ def infer_weight_format(weights):
     if not weights:
         return False, "No weight values to analyze"
     
-    # Convert to numpy array if not already
-    weights_array = np.array(weights, dtype=float)
-    
     # Calculate basic statistics
+    weights_array = np.array(weights)
     total_weight = np.sum(weights_array)
     max_weight = np.max(weights_array)
-    mean_weight = np.mean(weights_array)
     
     # Case 1: If the total weight is already close to 100, values are likely percentages
     if 80 <= total_weight <= 120:
@@ -192,20 +189,18 @@ def infer_weight_format(weights):
     if total_weight < 10:
         return True, f"Total weight ({total_weight:.2f}) is very small, suggesting decimal values need conversion to percentages"
     
-    # Case 3: If the maximum value is large (>25), values are likely already percentages
+    # Case 3: If the maximum value is large (>50), values are likely already percentages
     if max_weight > 25:
         return False, f"Maximum weight ({max_weight:.2f}) exceeds typical ETF component weight, suggesting values are already percentages"
     
     # Case 4: If we have many small values (<1.0), but total is significant, they're likely already percentages
     small_values = weights_array < 1.0
-    if small_values.size > 0:  # Ensure the array isn't empty
-        percent_small = np.mean(small_values) * 100 if small_values.size > 0 else 0
-        if percent_small > 70:  # If more than 70% of values are <1.0
-            return False, f"{percent_small:.1f}% of weights are <1.0, suggesting values are already small percentages"
+    percent_small = np.mean(small_values) * 100
+    if percent_small > 70:  # If more than 70% of values are <1.0
+        return False, f"{percent_small:.1f}% of weights are <1.0, suggesting values are already small percentages"
     
     # Default case: assume needed conversion if most values are very small
-    needs_conversion = mean_weight < 0.5 if weights_array.size > 0 else False
-    return needs_conversion, f"Mean weight ({mean_weight:.4f}) suggests {'conversion needed' if needs_conversion else 'no conversion needed'}"
+    return (np.mean(weights_array) < 0.5), f"Mean weight ({np.mean(weights_array):.4f}) suggests {'conversion needed' if np.mean(weights_array) < 0.5 else 'no conversion needed'}"
 
 def normalize_weights(weights, component_names=None):
     """
@@ -221,8 +216,7 @@ def normalize_weights(weights, component_names=None):
     if not weights:
         return []
     
-    # Convert to numpy array
-    weights_array = np.array(weights, dtype=float)
+    weights_array = np.array(weights)
     names = component_names if component_names else [f"Component {i+1}" for i in range(len(weights))]
     
     # Check if conversion needed
@@ -237,7 +231,7 @@ def normalize_weights(weights, component_names=None):
         normalized = weights_array
     
     # Check for unreasonable values
-    max_value = float(np.max(normalized)) if normalized.size > 0 else 0
+    max_value = np.max(normalized)
     if max_value > MAX_WEIGHT_THRESHOLD:
         if needs_conversion:
             print(f"WARNING: After conversion, maximum weight ({max_value:.2f}%) exceeds threshold ({MAX_WEIGHT_THRESHOLD}%).")
@@ -245,50 +239,19 @@ def normalize_weights(weights, component_names=None):
             normalized = weights_array  # Revert to original values
         else:
             print(f"WARNING: Maximum weight ({max_value:.2f}%) exceeds threshold ({MAX_WEIGHT_THRESHOLD}%).")
-            
-            # Find index of maximum value safely
-            if normalized.size > 0:
-                idx = int(np.argmax(normalized))
-                if 0 <= idx < len(names):
-                    print(f"Highest weight is for {names[idx]}: {normalized[idx]:.2f}%")
+            idx = np.argmax(normalized)
+            print(f"Highest weight is for {names[idx]}: {normalized[idx]:.2f}%")
             
             # Cap extreme values
             extreme_mask = normalized > MAX_WEIGHT_THRESHOLD
-            extreme_count = np.sum(extreme_mask) if extreme_mask.size > 0 else 0
-            if extreme_count > 0:
-                print(f"Capping {extreme_count} extreme weight values:")
-                
-                # Get indices of extreme values
+            if np.any(extreme_mask):
                 extreme_indices = np.where(extreme_mask)[0]
+                print(f"Capping {len(extreme_indices)} extreme weight values:")
                 for idx in extreme_indices:
-                    if 0 <= idx < len(names) and idx < len(normalized):
-                        print(f"  - {names[idx]}: {normalized[idx]:.2f}% → {MAX_WEIGHT_THRESHOLD}%")
-                        normalized[idx] = MAX_WEIGHT_THRESHOLD
+                    print(f"  - {names[idx]}: {normalized[idx]:.2f}% → {MAX_WEIGHT_THRESHOLD}%")
+                    normalized[idx] = MAX_WEIGHT_THRESHOLD
     
     return normalized.tolist()
-
-def is_excel_file(file_content):
-    """
-    Check if the file content is a valid Excel file by looking at the file signature.
-    
-    Args:
-        file_content: Binary content of the file
-    
-    Returns:
-        bool: True if it's a valid Excel file, False otherwise
-    """
-    # Excel file signatures
-    excel_signatures = [
-        b'\x50\x4B\x03\x04',  # XLSX/XLSM (ZIP format)
-        b'\xD0\xCF\x11\xE0',  # XLS (OLE2 format)
-    ]
-    
-    # Check first few bytes against known signatures
-    for sig in excel_signatures:
-        if file_content.startswith(sig):
-            return True
-    
-    return False
 
 def download_spy_holdings():
     """
@@ -310,340 +273,92 @@ def download_spy_holdings():
         # Save the raw file for inspection
         today = datetime.datetime.now().strftime("%Y%m%d")
         raw_file = RAW_DIR / f"spy_holdings_raw_{today}.xlsx"
-        csv_file = RAW_DIR / f"spy_holdings_raw_{today}.csv"
-        
         with open(raw_file, 'wb') as f:
             f.write(response.content)
         print(f"Saved raw SPY holdings to {raw_file}")
-        
-        # Also save raw content as text for inspection
-        try:
-            with open(csv_file, 'wb') as f:
-                f.write(response.content)
-            print(f"Saved raw SPY content as {csv_file} for inspection")
-        except:
-            print("Could not save raw content as CSV")
-        
-        # Check if it's actually an Excel file
-        if not is_excel_file(response.content):
-            print("WARNING: The downloaded file does not appear to be a valid Excel file. Trying CSV parsing first.")
-            try_csv_first = True
-        else:
-            try_csv_first = False
         
         # Try different parsing approaches
         result = None
         parse_method = ""
         
-        # First try CSV parsing if the file doesn't look like Excel
-        if try_csv_first:
-            try:
-                print("Trying to parse SPY holdings as CSV first")
-                # Try different encodings and delimiters
-                for encoding in ['utf-8', 'latin1', 'cp1252']:
-                    for delimiter in [',', '\t', ';']:
-                        try:
-                            df = pd.read_csv(io.BytesIO(response.content), 
-                                             encoding=encoding, 
-                                             delimiter=delimiter,
-                                             on_bad_lines='skip')  # Updated from error_bad_lines
-                            
-                            # Check if we got sensible data
-                            if len(df.columns) > 2:
-                                print(f"Successfully parsed SPY as CSV with encoding={encoding}, delimiter={delimiter}")
-                                print(f"Columns: {df.columns.tolist()}")
-                                
-                                # Look for key columns
-                                ticker_col = None
-                                name_col = None
-                                weight_col = None
-                                
-                                for col in df.columns:
-                                    col_lower = str(col).lower()
-                                    if 'ticker' in col_lower or 'symbol' in col_lower:
-                                        ticker_col = col
-                                    elif 'name' in col_lower or 'description' in col_lower or 'security' in col_lower:
-                                        name_col = col
-                                    elif 'weight' in col_lower or 'wt.' in col_lower or 'wt' in col_lower:
-                                        weight_col = col
-                                
-                                if ticker_col:
-                                    print(f"Found key columns: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
-                                    
-                                    # Basic cleanup
-                                    df = df.dropna(subset=[ticker_col])
-                                    
-                                    # Collect weight values for analysis
-                                    weight_vals = []
-                                    component_names = []
-                                    
-                                    if weight_col and weight_col in df.columns:
-                                        # Handle non-numeric values safely
-                                        numeric_weights = pd.to_numeric(df[weight_col], errors='coerce')
-                                        weight_vals = numeric_weights.dropna().tolist()
-                                        
-                                        # Create name strings for components with weights
-                                        weight_indices = numeric_weights.dropna().index
-                                        component_names = []
-                                        for idx in weight_indices:
-                                            if idx < len(df):
-                                                name_str = f"{df.iloc[idx][ticker_col]}"
-                                                if name_col and pd.notna(df.iloc[idx].get(name_col, pd.NA)):
-                                                    name_str += f": {df.iloc[idx][name_col]}"
-                                                component_names.append(name_str)
-                                    
-                                    # Normalize weights if there are any
-                                    normalized_weights = {}
-                                    if weight_vals:
-                                        try:
-                                            normalized = normalize_weights(weight_vals, component_names)
-                                            
-                                            # Map normalized weights back to indices
-                                            weight_indices = numeric_weights.dropna().index.tolist()
-                                            normalized_weights = {}
-                                            for i, idx in enumerate(weight_indices):
-                                                if i < len(normalized):
-                                                    normalized_weights[idx] = normalized[i]
-                                        except Exception as e:
-                                            print(f"Error normalizing weights: {e}")
-                                            import traceback
-                                            traceback.print_exc()
-                                    
-                                    # Format data into standardized structure
-                                    result = []
-                                    for i, row in df.iterrows():
-                                        try:
-                                            symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
-                                            if not symbol:
-                                                continue
-                                                
-                                            item = {
-                                                "symbol": symbol,
-                                                "rank": i + 1
-                                            }
-                                            
-                                            if name_col and pd.notna(row.get(name_col, pd.NA)):
-                                                item["name"] = str(row[name_col]).strip()
-                                            else:
-                                                item["name"] = f"{symbol} Inc."
-                                            
-                                            # Add weight if available - use normalized value
-                                            if i in normalized_weights:
-                                                item["weight"] = normalized_weights[i]
-                                            
-                                            result.append(item)
-                                        except Exception as e:
-                                            print(f"Error processing row {i} with CSV approach: {e}")
-                                            continue
-                                    
-                                    print(f"Processed {len(result)} SPY holdings with CSV approach")
-                                    parse_method = f"csv-{encoding}-{delimiter}"
-                                    break
-                        except Exception as e:
-                            print(f"Error with CSV parsing (encoding={encoding}, delimiter={delimiter}): {e}")
-                    
-                    # Break outer loop if we found a working approach
-                    if result:
-                        break
-            except Exception as e:
-                print(f"Error with CSV parsing approach: {e}")
-        
-        # Try Excel parsing if CSV didn't work or we skipped it
-        if not result:
-            # Approach 1: Standard parsing with skiprows=3 (typical format)
-            try:
-                df = pd.read_excel(io.BytesIO(response.content), skiprows=3)
+        # Approach 1: Standard parsing with skiprows=3 (typical format)
+        try:
+            df = pd.read_excel(io.BytesIO(response.content), skiprows=3)
+            
+            # Check if we got sensible data by looking for expected columns
+            if 'Ticker' in df.columns and any(col for col in df.columns if 'Weight' in col):
+                print("Successfully parsed SPY holdings with standard approach")
                 
-                # Check if we got sensible data by looking for expected columns
-                if 'Ticker' in df.columns and any(col for col in df.columns if 'Weight' in col):
-                    print("Successfully parsed SPY holdings with standard approach")
-                    
-                    # Extract key columns
-                    ticker_col = 'Ticker'
-                    name_col = 'Security Description' if 'Security Description' in df.columns else None
-                    weight_col = next((col for col in df.columns if 'Weight' in col), None)
-                    
-                    # Basic cleanup
-                    df = df.dropna(subset=[ticker_col])
-                    
-                    # Collect weight values for analysis
-                    weight_vals = []
-                    component_names = []
-                    
-                    if weight_col and weight_col in df.columns:
-                        # Handle non-numeric values safely
-                        numeric_weights = pd.to_numeric(df[weight_col], errors='coerce')
-                        weight_vals = numeric_weights.dropna().tolist()
-                        
-                        # Create name strings for components with weights
-                        weight_indices = numeric_weights.dropna().index
-                        component_names = []
-                        for idx in weight_indices:
-                            if idx < len(df):
-                                name_str = f"{df.iloc[idx][ticker_col]}"
-                                if name_col and pd.notna(df.iloc[idx].get(name_col, pd.NA)):
-                                    name_str += f": {df.iloc[idx][name_col]}"
-                                component_names.append(name_str)
-                    
-                    # Normalize weights if there are any
-                    normalized_weights = {}
-                    if weight_vals:
-                        try:
-                            normalized = normalize_weights(weight_vals, component_names)
-                            
-                            # Map normalized weights back to indices
-                            weight_indices = numeric_weights.dropna().index.tolist()
-                            normalized_weights = {}
-                            for i, idx in enumerate(weight_indices):
-                                if i < len(normalized):
-                                    normalized_weights[idx] = normalized[i]
-                        except Exception as e:
-                            print(f"Error normalizing weights: {e}")
-                            import traceback
-                            traceback.print_exc()
-                    
-                    # Format data into standardized structure
-                    result = []
-                    for i, row in df.iterrows():
-                        try:
-                            symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
-                            if not symbol:  # Skip rows without a valid ticker
-                                continue
-                                
-                            # Format the data
-                            item = {
-                                "symbol": symbol,
-                                "rank": i + 1  # 1-based rank
-                            }
-                            
-                            # Add name if available
-                            if name_col and pd.notna(row.get(name_col, pd.NA)):
-                                item["name"] = str(row[name_col]).strip()
-                            else:
-                                item["name"] = f"{symbol} Inc."
-                            
-                            # Add weight if available - use normalized value
-                            if i in normalized_weights:
-                                item["weight"] = normalized_weights[i]
-                            
-                            result.append(item)
-                        except Exception as e:
-                            print(f"Error processing SPY row {i}: {e}")
-                            continue
-                    
-                    print(f"Processed {len(result)} SPY holdings with standard approach")
-                    parse_method = "standard"
-                else:
-                    print("Standard parsing approach failed - missing expected columns")
-            except Exception as e:
-                print(f"Error with standard parsing approach: {e}")
-            
-            # Approach 2: Try different skiprows values if standard approach failed
-            if not result:
-                for skiprows in [0, 1, 2, 4, 5]:
+                # Extract key columns
+                ticker_col = 'Ticker'
+                name_col = 'Security Description' if 'Security Description' in df.columns else None
+                weight_col = next((col for col in df.columns if 'Weight' in col), None)
+                
+                # Basic cleanup
+                df = df.dropna(subset=[ticker_col])
+                
+                # Collect weight values for analysis
+                weight_vals = []
+                component_names = []
+                if weight_col:
+                    weight_vals = df[weight_col].dropna().astype(float).tolist()
+                    component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                      for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                
+                # Format data into standardized structure
+                result = []
+                
+                # Normalize weights if there are any
+                normalized_weights = {}
+                if weight_vals:
+                    normalized = normalize_weights(weight_vals, component_names)
+                    # Create a dictionary mapping row index to normalized weight
+                    weight_indices = df.dropna(subset=[weight_col]).index
+                    normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                
+                # Process rows
+                for i, row in df.iterrows():
                     try:
-                        print(f"Trying alternative parsing with skiprows={skiprows}")
-                        df = pd.read_excel(io.BytesIO(response.content), skiprows=skiprows)
+                        symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
+                        if not symbol:  # Skip rows without a valid ticker
+                            continue
+                            
+                        # Format the data
+                        item = {
+                            "symbol": symbol,
+                            "rank": i + 1  # 1-based rank
+                        }
                         
-                        # Look for key columns
-                        ticker_col = None
-                        name_col = None
-                        weight_col = None
+                        # Add name if available
+                        if name_col and pd.notna(row[name_col]):
+                            item["name"] = str(row[name_col]).strip()
+                        else:
+                            item["name"] = f"{symbol} Inc."
                         
-                        for col in df.columns:
-                            col_lower = str(col).lower()
-                            if 'ticker' in col_lower or 'symbol' in col_lower:
-                                ticker_col = col
-                            elif 'name' in col_lower or 'description' in col_lower or 'security' in col_lower:
-                                name_col = col
-                            elif 'weight' in col_lower or 'wt.' in col_lower or 'wt' in col_lower:
-                                weight_col = col
+                        # Add weight if available - use normalized value
+                        if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                            item["weight"] = normalized_weights[i]
                         
-                        if ticker_col and weight_col:
-                            print(f"Found key columns: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
-                            
-                            # Basic cleanup
-                            df = df.dropna(subset=[ticker_col])
-                            
-                            # Same weight normalization as above, but I'll restructure it to avoid repetition
-                            # Collect weight values for analysis
-                            weight_vals = []
-                            component_names = []
-                            
-                            if weight_col and weight_col in df.columns:
-                                # Handle non-numeric values safely
-                                numeric_weights = pd.to_numeric(df[weight_col], errors='coerce')
-                                weight_vals = numeric_weights.dropna().tolist()
-                                
-                                # Create name strings for components with weights
-                                weight_indices = numeric_weights.dropna().index
-                                component_names = []
-                                for idx in weight_indices:
-                                    if idx < len(df):
-                                        name_str = f"{df.iloc[idx][ticker_col]}"
-                                        if name_col and pd.notna(df.iloc[idx].get(name_col, pd.NA)):
-                                            name_str += f": {df.iloc[idx][name_col]}"
-                                        component_names.append(name_str)
-                            
-                            # Normalize weights if there are any
-                            normalized_weights = {}
-                            if weight_vals:
-                                try:
-                                    normalized = normalize_weights(weight_vals, component_names)
-                                    
-                                    # Map normalized weights back to indices
-                                    weight_indices = numeric_weights.dropna().index.tolist()
-                                    normalized_weights = {}
-                                    for i, idx in enumerate(weight_indices):
-                                        if i < len(normalized):
-                                            normalized_weights[idx] = normalized[i]
-                                except Exception as e:
-                                    print(f"Error normalizing weights: {e}")
-                                    import traceback
-                                    traceback.print_exc()
-                            
-                            # Process rows
-                            result = []
-                            for i, row in df.iterrows():
-                                try:
-                                    symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
-                                    if not symbol:
-                                        continue
-                                        
-                                    item = {
-                                        "symbol": symbol,
-                                        "rank": i + 1
-                                    }
-                                    
-                                    if name_col and pd.notna(row.get(name_col, pd.NA)):
-                                        item["name"] = str(row[name_col]).strip()
-                                    else:
-                                        item["name"] = f"{symbol} Inc."
-                                    
-                                    # Add weight if available - use normalized value
-                                    if i in normalized_weights:
-                                        item["weight"] = normalized_weights[i]
-                                    
-                                    result.append(item)
-                                except Exception as e:
-                                    print(f"Error processing row {i} with alternative approach: {e}")
-                                    continue
-                            
-                            print(f"Processed {len(result)} SPY holdings with alternative approach (skiprows={skiprows})")
-                            parse_method = f"alternative-{skiprows}"
-                            break
+                        result.append(item)
                     except Exception as e:
-                        print(f"Alternative parsing approach (skiprows={skiprows}) failed: {e}")
-                        import traceback
-                        traceback.print_exc()
-            
-            # Approach 3: Try using openpyxl engine if other approaches failed
-            if not result:
+                        print(f"Error processing SPY row {i}: {e}")
+                        continue
+                
+                print(f"Processed {len(result)} SPY holdings with standard approach")
+                parse_method = "standard"
+            else:
+                print("Standard parsing approach failed - missing expected columns")
+        except Exception as e:
+            print(f"Error with standard parsing approach: {e}")
+        
+        # Approach 2: Try different skiprows values if standard approach failed
+        if not result:
+            for skiprows in [0, 1, 2, 4, 5]:
                 try:
-                    print("Trying parsing with openpyxl engine")
-                    df = pd.read_excel(io.BytesIO(response.content), engine='openpyxl')
+                    print(f"Trying alternative parsing with skiprows={skiprows}")
+                    df = pd.read_excel(io.BytesIO(response.content), skiprows=skiprows)
                     
-                    # Similar column detection and processing...
+                    # Look for key columns
                     ticker_col = None
                     name_col = None
                     weight_col = None
@@ -658,48 +373,28 @@ def download_spy_holdings():
                             weight_col = col
                     
                     if ticker_col and weight_col:
-                        print(f"Found key columns with openpyxl engine: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
+                        print(f"Found key columns: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
                         
-                        # Process data similar to above approaches
-                        # (Repeating the same weight normalization and data processing)
+                        # Basic cleanup
                         df = df.dropna(subset=[ticker_col])
                         
                         # Collect weight values for analysis
                         weight_vals = []
                         component_names = []
-                        
-                        if weight_col and weight_col in df.columns:
-                            # Handle non-numeric values safely
-                            numeric_weights = pd.to_numeric(df[weight_col], errors='coerce')
-                            weight_vals = numeric_weights.dropna().tolist()
-                            
-                            # Create name strings for components with weights
-                            weight_indices = numeric_weights.dropna().index
-                            component_names = []
-                            for idx in weight_indices:
-                                if idx < len(df):
-                                    name_str = f"{df.iloc[idx][ticker_col]}"
-                                    if name_col and pd.notna(df.iloc[idx].get(name_col, pd.NA)):
-                                        name_str += f": {df.iloc[idx][name_col]}"
-                                    component_names.append(name_str)
+                        if weight_col:
+                            weight_vals = df[weight_col].dropna().astype(float).tolist()
+                            component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                              for _, row in df.dropna(subset=[weight_col]).iterrows()]
                         
                         # Normalize weights if there are any
                         normalized_weights = {}
                         if weight_vals:
-                            try:
-                                normalized = normalize_weights(weight_vals, component_names)
-                                
-                                # Map normalized weights back to indices
-                                weight_indices = numeric_weights.dropna().index.tolist()
-                                normalized_weights = {}
-                                for i, idx in enumerate(weight_indices):
-                                    if i < len(normalized):
-                                        normalized_weights[idx] = normalized[i]
-                            except Exception as e:
-                                print(f"Error normalizing weights: {e}")
-                                import traceback
-                                traceback.print_exc()
+                            normalized = normalize_weights(weight_vals, component_names)
+                            # Create a dictionary mapping row index to normalized weight
+                            weight_indices = df.dropna(subset=[weight_col]).index
+                            normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
                         
+                        # Process rows
                         result = []
                         for i, row in df.iterrows():
                             try:
@@ -712,24 +407,98 @@ def download_spy_holdings():
                                     "rank": i + 1
                                 }
                                 
-                                if name_col and pd.notna(row.get(name_col, pd.NA)):
+                                if name_col and pd.notna(row[name_col]):
                                     item["name"] = str(row[name_col]).strip()
                                 else:
                                     item["name"] = f"{symbol} Inc."
                                 
-                                # Add weight if available
-                                if i in normalized_weights:
+                                # Add weight if available - use normalized value
+                                if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
                                     item["weight"] = normalized_weights[i]
                                 
                                 result.append(item)
                             except Exception as e:
-                                print(f"Error processing row {i} with openpyxl engine: {e}")
+                                print(f"Error processing row {i} with alternative approach: {e}")
                                 continue
                         
-                        print(f"Processed {len(result)} SPY holdings with openpyxl engine")
-                        parse_method = "openpyxl"
+                        print(f"Processed {len(result)} SPY holdings with alternative approach (skiprows={skiprows})")
+                        parse_method = f"alternative-{skiprows}"
+                        break
                 except Exception as e:
-                    print(f"Parsing with openpyxl engine failed: {e}")
+                    print(f"Alternative parsing approach (skiprows={skiprows}) failed: {e}")
+        
+        # Approach 3: Try using openpyxl engine if other approaches failed
+        if not result:
+            try:
+                print("Trying parsing with openpyxl engine")
+                df = pd.read_excel(io.BytesIO(response.content), engine='openpyxl')
+                
+                # Similar column detection and processing...
+                ticker_col = None
+                name_col = None
+                weight_col = None
+                
+                for col in df.columns:
+                    col_lower = str(col).lower()
+                    if 'ticker' in col_lower or 'symbol' in col_lower:
+                        ticker_col = col
+                    elif 'name' in col_lower or 'description' in col_lower or 'security' in col_lower:
+                        name_col = col
+                    elif 'weight' in col_lower or 'wt.' in col_lower or 'wt' in col_lower:
+                        weight_col = col
+                
+                if ticker_col and weight_col:
+                    print(f"Found key columns with openpyxl engine: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
+                    
+                    # Process data similar to above approaches
+                    df = df.dropna(subset=[ticker_col])
+                    
+                    # Collect weight values for analysis
+                    weight_vals = []
+                    component_names = []
+                    if weight_col:
+                        weight_vals = df[weight_col].dropna().astype(float).tolist()
+                        component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                          for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                    
+                    # Normalize weights if there are any
+                    normalized_weights = {}
+                    if weight_vals:
+                        normalized = normalize_weights(weight_vals, component_names)
+                        # Create a dictionary mapping row index to normalized weight
+                        weight_indices = df.dropna(subset=[weight_col]).index
+                        normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                    
+                    result = []
+                    for i, row in df.iterrows():
+                        try:
+                            symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
+                            if not symbol:
+                                continue
+                                
+                            item = {
+                                "symbol": symbol,
+                                "rank": i + 1
+                            }
+                            
+                            if name_col and pd.notna(row[name_col]):
+                                item["name"] = str(row[name_col]).strip()
+                            else:
+                                item["name"] = f"{symbol} Inc."
+                            
+                            # Add weight if available - use normalized value
+                            if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                                item["weight"] = normalized_weights[i]
+                            
+                            result.append(item)
+                        except Exception as e:
+                            print(f"Error processing row {i} with openpyxl engine: {e}")
+                            continue
+                    
+                    print(f"Processed {len(result)} SPY holdings with openpyxl engine")
+                    parse_method = "openpyxl"
+            except Exception as e:
+                print(f"Parsing with openpyxl engine failed: {e}")
         
         # If we have successfully parsed data, return it
         if result and len(result) > 0:
@@ -792,18 +561,11 @@ def download_qqq_holdings():
         except:
             print("Could not save raw content as CSV")
         
-        # Check if it's actually an Excel file
-        if not is_excel_file(response.content):
-            print("WARNING: The downloaded file does not appear to be a valid Excel file. Trying CSV parsing first.")
-            try_csv_first = True
-        else:
-            try_csv_first = False
-        
         # Try different parsing approaches
         result = None
         parse_method = ""
         
-        # Try CSV parsing first (since QQQ file appears to actually be a CSV)
+        # Additional approach: Try parsing as CSV
         try:
             print("Trying to parse QQQ holdings as CSV")
             # Try different encodings and delimiters
@@ -813,19 +575,18 @@ def download_qqq_holdings():
                         df = pd.read_csv(io.BytesIO(response.content), 
                                          encoding=encoding, 
                                          delimiter=delimiter,
-                                         on_bad_lines='skip')  # Updated from error_bad_lines
+                                         error_bad_lines=False)
                         
                         # Check if we got sensible data
                         if len(df.columns) > 2:
                             print(f"Successfully parsed QQQ as CSV with encoding={encoding}, delimiter={delimiter}")
                             print(f"Columns: {df.columns.tolist()}")
                             
-                            # Identify key columns
+                            # Look for key columns
                             ticker_col = None
                             name_col = None
                             weight_col = None
                             
-                            # Look for common column names
                             for col in df.columns:
                                 col_lower = str(col).lower()
                                 if 'ticker' in col_lower or 'symbol' in col_lower:
@@ -835,7 +596,6 @@ def download_qqq_holdings():
                                 elif 'weight' in col_lower or 'wt.' in col_lower or 'wt' in col_lower:
                                     weight_col = col
                             
-                            # If we found ticker column
                             if ticker_col:
                                 print(f"Found key columns: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
                                 
@@ -845,45 +605,25 @@ def download_qqq_holdings():
                                 # Collect weight values for analysis
                                 weight_vals = []
                                 component_names = []
-                                
-                                if weight_col and weight_col in df.columns:
-                                    # Handle non-numeric values safely
-                                    numeric_weights = pd.to_numeric(df[weight_col], errors='coerce')
-                                    weight_vals = numeric_weights.dropna().tolist()
-                                    
-                                    # Create name strings for components with weights
-                                    weight_indices = numeric_weights.dropna().index
-                                    component_names = []
-                                    for idx in weight_indices:
-                                        if idx < len(df):
-                                            name_str = f"{df.iloc[idx][ticker_col]}"
-                                            if name_col and name_col in df.columns and pd.notna(df.iloc[idx][name_col]):
-                                                name_str += f": {df.iloc[idx][name_col]}"
-                                            component_names.append(name_str)
+                                if weight_col:
+                                    weight_vals = df[weight_col].dropna().astype(float).tolist()
+                                    component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                                       for _, row in df.dropna(subset=[weight_col]).iterrows()]
                                 
                                 # Normalize weights if there are any
                                 normalized_weights = {}
                                 if weight_vals:
-                                    try:
-                                        normalized = normalize_weights(weight_vals, component_names)
-                                        
-                                        # Map normalized weights back to indices
-                                        weight_indices = numeric_weights.dropna().index.tolist()
-                                        normalized_weights = {}
-                                        for i, idx in enumerate(weight_indices):
-                                            if i < len(normalized):
-                                                normalized_weights[idx] = normalized[i]
-                                    except Exception as e:
-                                        print(f"Error normalizing weights: {e}")
-                                        import traceback
-                                        traceback.print_exc()
+                                    normalized = normalize_weights(weight_vals, component_names)
+                                    # Create a dictionary mapping row index to normalized weight
+                                    weight_indices = df.dropna(subset=[weight_col]).index
+                                    normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
                                 
-                                # Process rows
+                                # Format data into standardized structure
                                 result = []
                                 for i, row in df.iterrows():
                                     try:
                                         symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
-                                        if not symbol or symbol.lower() in ('cash', 'n/a', 'nan'):
+                                        if not symbol:
                                             continue
                                             
                                         item = {
@@ -891,47 +631,249 @@ def download_qqq_holdings():
                                             "rank": i + 1
                                         }
                                         
-                                        if name_col and name_col in df.columns and pd.notna(row[name_col]):
+                                        if name_col and pd.notna(row[name_col]):
                                             item["name"] = str(row[name_col]).strip()
                                         else:
                                             item["name"] = f"{symbol} Inc."
                                         
-                                        # Add weight if available
-                                        if i in normalized_weights:
+                                        # Add weight if available - use normalized value
+                                        if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
                                             item["weight"] = normalized_weights[i]
                                         
                                         result.append(item)
                                     except Exception as e:
-                                        print(f"Error processing QQQ row {i} with CSV parsing: {e}")
+                                        print(f"Error processing row {i} with CSV approach: {e}")
                                         continue
                                 
-                                print(f"Processed {len(result)} QQQ holdings with CSV parsing")
+                                print(f"Processed {len(result)} QQQ holdings with CSV approach")
                                 parse_method = f"csv-{encoding}-{delimiter}"
                                 break
                     except Exception as e:
                         print(f"Error with CSV parsing (encoding={encoding}, delimiter={delimiter}): {e}")
-                        import traceback
-                        traceback.print_exc()
                 
                 # Break outer loop if we found a working approach
                 if result:
                     break
         except Exception as e:
             print(f"Error with CSV parsing approach: {e}")
-            import traceback
-            traceback.print_exc()
         
-        # Try standard Excel parsing if CSV didn't work
+        # Approach 1: Standard parsing with skiprows=1 (typical format)
         if not result:
             try:
-                print("Trying standard Excel parsing for QQQ")
                 df = pd.read_excel(io.BytesIO(response.content), skiprows=1)
                 
-                # Process Excel file similar to above
-                # This code is very similar to the CSV processing
-                # ...
+                # Check for expected columns
+                expected_cols = ['Holding Ticker', 'Holding Name', 'Weight']
+                if all(col in df.columns for col in expected_cols):
+                    print("Successfully parsed QQQ holdings with standard approach")
+                    
+                    # Extract key columns
+                    ticker_col = 'Holding Ticker'
+                    name_col = 'Holding Name'
+                    weight_col = 'Weight'
+                    
+                    # Basic cleanup
+                    df = df.dropna(subset=[ticker_col])
+                    
+                    # Collect weight values for analysis
+                    weight_vals = []
+                    component_names = []
+                    if weight_col:
+                        weight_vals = df[weight_col].dropna().astype(float).tolist()
+                        component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                           for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                    
+                    # Normalize weights if there are any
+                    normalized_weights = {}
+                    if weight_vals:
+                        normalized = normalize_weights(weight_vals, component_names)
+                        # Create a dictionary mapping row index to normalized weight
+                        weight_indices = df.dropna(subset=[weight_col]).index
+                        normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                    
+                    # Format data into standardized structure
+                    result = []
+                    for i, row in df.iterrows():
+                        try:
+                            symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
+                            if not symbol:  # Skip rows without a valid ticker
+                                continue
+                                
+                            # Format the data
+                            item = {
+                                "symbol": symbol,
+                                "rank": i + 1  # 1-based rank
+                            }
+                            
+                            # Add name if available
+                            if name_col and pd.notna(row[name_col]):
+                                item["name"] = str(row[name_col]).strip()
+                            else:
+                                item["name"] = f"{symbol} Inc."
+                            
+                            # Add weight if available - use normalized value
+                            if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                                item["weight"] = normalized_weights[i]
+                            
+                            result.append(item)
+                        except Exception as e:
+                            print(f"Error processing QQQ row {i}: {e}")
+                            continue
+                    
+                    print(f"Processed {len(result)} QQQ holdings with standard approach")
+                    parse_method = "standard"
+                else:
+                    print("Standard parsing approach failed - missing expected columns")
+                    print(f"Found columns: {df.columns.tolist()}")
             except Exception as e:
-                print(f"Error with standard Excel parsing: {e}")
+                print(f"Error with standard parsing approach: {e}")
+        
+        # Approach 2: Try different skiprows values if standard approach failed
+        if not result:
+            for skiprows in [0, 2, 3, 4]:
+                try:
+                    print(f"Trying alternative parsing with skiprows={skiprows}")
+                    df = pd.read_excel(io.BytesIO(response.content), skiprows=skiprows)
+                    
+                    # Look for key columns
+                    ticker_col = None
+                    name_col = None
+                    weight_col = None
+                    
+                    for col in df.columns:
+                        col_lower = str(col).lower()
+                        if 'ticker' in col_lower or 'symbol' in col_lower:
+                            ticker_col = col
+                        elif 'name' in col_lower or 'description' in col_lower or 'security' in col_lower:
+                            name_col = col
+                        elif 'weight' in col_lower or 'wt.' in col_lower or 'wt' in col_lower:
+                            weight_col = col
+                    
+                    if ticker_col and weight_col:
+                        print(f"Found key columns: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
+                        # Basic cleanup
+                        df = df.dropna(subset=[ticker_col])
+                        
+                        # Collect weight values for analysis
+                        weight_vals = []
+                        component_names = []
+                        if weight_col:
+                            weight_vals = df[weight_col].dropna().astype(float).tolist()
+                            component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                               for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                        
+                        # Normalize weights if there are any
+                        normalized_weights = {}
+                        if weight_vals:
+                            normalized = normalize_weights(weight_vals, component_names)
+                            # Create a dictionary mapping row index to normalized weight
+                            weight_indices = df.dropna(subset=[weight_col]).index
+                            normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                        
+                        result = []
+                        for i, row in df.iterrows():
+                            try:
+                                symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
+                                if not symbol:
+                                    continue
+                                    
+                                item = {
+                                    "symbol": symbol,
+                                    "rank": i + 1
+                                }
+                                
+                                if name_col and pd.notna(row[name_col]):
+                                    item["name"] = str(row[name_col]).strip()
+                                else:
+                                    item["name"] = f"{symbol} Inc."
+                                
+                                # Add weight if available - use normalized value
+                                if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                                    item["weight"] = normalized_weights[i]
+                                
+                                result.append(item)
+                            except Exception as e:
+                                print(f"Error processing row {i} with alternative approach: {e}")
+                                continue
+                        
+                        print(f"Processed {len(result)} QQQ holdings with alternative approach (skiprows={skiprows})")
+                        parse_method = f"alternative-{skiprows}"
+                        break
+                except Exception as e:
+                    print(f"Alternative parsing approach (skiprows={skiprows}) failed: {e}")
+        
+        # Approach 3: Try using openpyxl engine if other approaches failed
+        if not result:
+            try:
+                print("Trying parsing with openpyxl engine")
+                df = pd.read_excel(io.BytesIO(response.content), engine='openpyxl')
+                
+                # Similar column detection and processing...
+                ticker_col = None
+                name_col = None
+                weight_col = None
+                
+                for col in df.columns:
+                    col_lower = str(col).lower()
+                    if 'ticker' in col_lower or 'symbol' in col_lower:
+                        ticker_col = col
+                    elif 'name' in col_lower or 'description' in col_lower or 'security' in col_lower:
+                        name_col = col
+                    elif 'weight' in col_lower or 'wt.' in col_lower or 'wt' in col_lower:
+                        weight_col = col
+                
+                if ticker_col and weight_col:
+                    print(f"Found key columns with openpyxl engine: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
+                    
+                    # Process data similar to above approaches
+                    df = df.dropna(subset=[ticker_col])
+                    
+                    # Collect weight values for analysis
+                    weight_vals = []
+                    component_names = []
+                    if weight_col:
+                        weight_vals = df[weight_col].dropna().astype(float).tolist()
+                        component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                           for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                    
+                    # Normalize weights if there are any
+                    normalized_weights = {}
+                    if weight_vals:
+                        normalized = normalize_weights(weight_vals, component_names)
+                        # Create a dictionary mapping row index to normalized weight
+                        weight_indices = df.dropna(subset=[weight_col]).index
+                        normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                    
+                    result = []
+                    for i, row in df.iterrows():
+                        try:
+                            symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
+                            if not symbol:
+                                continue
+                                
+                            item = {
+                                "symbol": symbol,
+                                "rank": i + 1
+                            }
+                            
+                            if name_col and pd.notna(row[name_col]):
+                                item["name"] = str(row[name_col]).strip()
+                            else:
+                                item["name"] = f"{symbol} Inc."
+                            
+                            # Add weight if available - use normalized value
+                            if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                                item["weight"] = normalized_weights[i]
+                            
+                            result.append(item)
+                        except Exception as e:
+                            print(f"Error processing row {i} with openpyxl engine: {e}")
+                            continue
+                    
+                    print(f"Processed {len(result)} QQQ holdings with openpyxl engine")
+                    parse_method = "openpyxl"
+            except Exception as e:
+                print(f"Parsing with openpyxl engine failed: {e}")
         
         # If we have successfully parsed data, return it
         if result and len(result) > 0:
