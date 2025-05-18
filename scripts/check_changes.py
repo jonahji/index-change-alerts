@@ -4,6 +4,9 @@ import datetime
 import smtplib
 import requests
 import time
+import pandas as pd
+import io
+import re
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
@@ -12,19 +15,70 @@ from pathlib import Path
 DATA_DIR = Path(__file__).parent.parent / "data"
 SP500_FILE = DATA_DIR / "sp500_current.json"
 QQQ_FILE = DATA_DIR / "qqq_current.json"
+CACHE_DIR = DATA_DIR / "cache"
+RAW_DIR = DATA_DIR / "raw"  # Directory to store raw downloaded files
 EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD") or os.environ.get("EMAIL_APP_PASSWORD")
 EMAIL_RECIPIENT = os.environ.get("EMAIL_RECIPIENT")
 TOP_POSITIONS_TO_TRACK = 20  # Track top 20 positions in each index
 
-# Ensure data directory exists
+# Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)
+CACHE_DIR.mkdir(exist_ok=True)
+RAW_DIR.mkdir(exist_ok=True)
 
-def fetch_real_data(symbol, api_key=None):
+def cache_api_response(symbol, data, cache_duration_hours=24):
+    """Cache API response data for a symbol."""
+    try:
+        cache_file = CACHE_DIR / f"{symbol}_api_cache.json"
+        
+        cache_data = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "expires": (datetime.datetime.now() + datetime.timedelta(hours=cache_duration_hours)).isoformat(),
+            "data": data
+        }
+        
+        with open(cache_file, 'w') as f:
+            json.dump(cache_data, f)
+            
+        print(f"Cached API data for {symbol}")
+    except Exception as e:
+        print(f"Error caching API data for {symbol}: {e}")
+
+def get_cached_api_response(symbol):
+    """Get cached API response if valid."""
+    try:
+        cache_file = CACHE_DIR / f"{symbol}_api_cache.json"
+        
+        if not cache_file.exists():
+            return None
+            
+        with open(cache_file, 'r') as f:
+            cache_data = json.load(f)
+            
+        # Check if cache is expired
+        expires = datetime.datetime.fromisoformat(cache_data["expires"])
+        if datetime.datetime.now() > expires:
+            print(f"Cache for {symbol} is expired")
+            return None
+            
+        print(f"Using cached API data for {symbol}")
+        return cache_data["data"]
+    except Exception as e:
+        print(f"Error reading cached API data for {symbol}: {e}")
+        return None
+
+def fetch_real_data(symbol, api_key=None, use_cache=True):
     """
     Fetch real market cap data for a stock using Alpha Vantage API.
-    This is a simple test function to validate API access works.
+    Uses caching to reduce API calls.
     """
+    # Check cache first if enabled
+    if use_cache:
+        cached_data = get_cached_api_response(symbol)
+        if cached_data:
+            return cached_data
+    
     if api_key is None:
         api_key = os.environ.get("ALPHA_VANTAGE_API_KEY", "demo")
         
@@ -54,17 +108,23 @@ def fetch_real_data(symbol, api_key=None):
         
         print(f"Successfully fetched real data for {symbol}: {name}, Market Cap: ${market_cap/1e9:.2f}B")
         
-        return {
+        result = {
             "symbol": symbol,
             "name": name,
             "market_cap": market_cap,
             "real_data": True
         }
+        
+        # Cache the result
+        if use_cache:
+            cache_api_response(symbol, result)
+        
+        return result
     except Exception as e:
         print(f"Error fetching real data for {symbol}: {e}")
         return None
 
-def fetch_top_stocks_data(symbols, max_stocks=5):
+def fetch_top_stocks_data(symbols, max_stocks=10):
     """
     Fetch real data for multiple stocks, respecting API rate limits.
     Returns a dictionary of stock data by symbol.
@@ -78,8 +138,14 @@ def fetch_top_stocks_data(symbols, max_stocks=5):
     
     results = {}
     for i, symbol in enumerate(symbols_to_fetch):
+        # Check if we already have cached data
+        cached_data = get_cached_api_response(symbol)
+        if cached_data:
+            results[symbol] = cached_data
+            continue
+            
         # Fetch data for this symbol
-        stock_data = fetch_real_data(symbol)
+        stock_data = fetch_real_data(symbol, use_cache=False)  # Don't check cache again
         
         if stock_data:
             results[symbol] = stock_data
@@ -93,11 +159,515 @@ def fetch_top_stocks_data(symbols, max_stocks=5):
     print(f"Successfully fetched data for {len(results)} out of {len(symbols_to_fetch)} stocks")
     return results
 
-def get_sp500_components():
+def download_spy_holdings():
     """
-    Get S&P 500 components with real data for the top stocks.
+    Download the latest holdings for SPY (S&P 500 ETF) from State Street.
+    Returns a list of holdings in standardized format.
+    
+    Improved to handle various Excel file formats and save raw files.
     """
-    print("Getting S&P 500 top components...")
+    # State Street SPDR (SPY) holdings URL
+    url = "https://www.ssga.com/us/en/individual/etfs/library-content/products/fund-data/etfs/us/holdings-daily-us-en-spy.xlsx"
+    
+    print(f"Downloading SPY holdings from: {url}")
+    
+    try:
+        # Download the Excel file
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        # Save the raw file for inspection
+        today = datetime.datetime.now().strftime("%Y%m%d")
+        raw_file = RAW_DIR / f"spy_holdings_raw_{today}.xlsx"
+        with open(raw_file, 'wb') as f:
+            f.write(response.content)
+        print(f"Saved raw SPY holdings to {raw_file}")
+        
+        # Try different parsing approaches
+        result = None
+        
+        # Approach 1: Standard parsing with skiprows=3 (typical format)
+        try:
+            df = pd.read_excel(io.BytesIO(response.content), skiprows=3)
+            
+            # Check if we got sensible data by looking for expected columns
+            if 'Ticker' in df.columns and any(col for col in df.columns if 'Weight' in col):
+                print("Successfully parsed SPY holdings with standard approach")
+                
+                # Extract key columns
+                ticker_col = 'Ticker'
+                name_col = 'Security Description' if 'Security Description' in df.columns else None
+                weight_col = next((col for col in df.columns if 'Weight' in col), None)
+                
+                # Basic cleanup
+                df = df.dropna(subset=[ticker_col])
+                
+                # Format data into standardized structure
+                result = []
+                for i, row in df.iterrows():
+                    try:
+                        symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
+                        if not symbol:  # Skip rows without a valid ticker
+                            continue
+                            
+                        # Format the data
+                        item = {
+                            "symbol": symbol,
+                            "rank": i + 1  # 1-based rank
+                        }
+                        
+                        # Add name if available
+                        if name_col and pd.notna(row[name_col]):
+                            item["name"] = str(row[name_col]).strip()
+                        else:
+                            item["name"] = f"{symbol} Inc."
+                        
+                        # Add weight if available - handle potential formatting issues
+                        if weight_col and pd.notna(row[weight_col]):
+                            weight_val = row[weight_col]
+                            if isinstance(weight_val, str):
+                                # Try to extract numeric value if it's a string
+                                try:
+                                    # Remove % signs, commas
+                                    weight_val = weight_val.replace('%', '').replace(',', '')
+                                    item["weight"] = float(weight_val)
+                                except:
+                                    # Use regex as fallback
+                                    match = re.search(r'(\d+\.?\d*)', weight_val)
+                                    if match:
+                                        item["weight"] = float(match.group(1))
+                            else:
+                                # Numeric value
+                                item["weight"] = float(weight_val)
+                                
+                            # If weight is not in percentage form (0-100), convert it
+                            if "weight" in item and item["weight"] < 1.0:
+                                item["weight"] = item["weight"] * 100
+                        
+                        result.append(item)
+                    except Exception as e:
+                        print(f"Error processing SPY row {i}: {e}")
+                        continue
+                
+                print(f"Processed {len(result)} SPY holdings with standard approach")
+            else:
+                print("Standard parsing approach failed - missing expected columns")
+        except Exception as e:
+            print(f"Error with standard parsing approach: {e}")
+        
+        # Approach 2: Try different skiprows values if standard approach failed
+        if not result:
+            for skiprows in [0, 1, 2, 4, 5]:
+                try:
+                    print(f"Trying alternative parsing with skiprows={skiprows}")
+                    df = pd.read_excel(io.BytesIO(response.content), skiprows=skiprows)
+                    
+                    # Look for key columns
+                    ticker_col = None
+                    name_col = None
+                    weight_col = None
+                    
+                    for col in df.columns:
+                        col_lower = str(col).lower()
+                        if 'ticker' in col_lower or 'symbol' in col_lower:
+                            ticker_col = col
+                        elif 'name' in col_lower or 'description' in col_lower or 'security' in col_lower:
+                            name_col = col
+                        elif 'weight' in col_lower or 'wt.' in col_lower or 'wt' in col_lower:
+                            weight_col = col
+                    
+                    if ticker_col and weight_col:
+                        print(f"Found key columns: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
+                        # Similar processing as above...
+                        df = df.dropna(subset=[ticker_col])
+                        
+                        result = []
+                        for i, row in df.iterrows():
+                            try:
+                                symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
+                                if not symbol:
+                                    continue
+                                    
+                                item = {
+                                    "symbol": symbol,
+                                    "rank": i + 1
+                                }
+                                
+                                if name_col and pd.notna(row[name_col]):
+                                    item["name"] = str(row[name_col]).strip()
+                                else:
+                                    item["name"] = f"{symbol} Inc."
+                                
+                                if weight_col and pd.notna(row[weight_col]):
+                                    weight_val = row[weight_col]
+                                    if isinstance(weight_val, str):
+                                        try:
+                                            weight_val = weight_val.replace('%', '').replace(',', '')
+                                            item["weight"] = float(weight_val)
+                                        except:
+                                            match = re.search(r'(\d+\.?\d*)', weight_val)
+                                            if match:
+                                                item["weight"] = float(match.group(1))
+                                    else:
+                                        item["weight"] = float(weight_val)
+                                        
+                                    if "weight" in item and item["weight"] < 1.0:
+                                        item["weight"] = item["weight"] * 100
+                                
+                                result.append(item)
+                            except Exception as e:
+                                print(f"Error processing row {i} with alternative approach: {e}")
+                                continue
+                        
+                        print(f"Processed {len(result)} SPY holdings with alternative approach (skiprows={skiprows})")
+                        break
+                except Exception as e:
+                    print(f"Alternative parsing approach (skiprows={skiprows}) failed: {e}")
+        
+        # Approach 3: Try using openpyxl engine if other approaches failed
+        if not result:
+            try:
+                print("Trying parsing with openpyxl engine")
+                df = pd.read_excel(io.BytesIO(response.content), engine='openpyxl')
+                
+                # Similar column detection and processing...
+                ticker_col = None
+                name_col = None
+                weight_col = None
+                
+                for col in df.columns:
+                    col_lower = str(col).lower()
+                    if 'ticker' in col_lower or 'symbol' in col_lower:
+                        ticker_col = col
+                    elif 'name' in col_lower or 'description' in col_lower or 'security' in col_lower:
+                        name_col = col
+                    elif 'weight' in col_lower or 'wt.' in col_lower or 'wt' in col_lower:
+                        weight_col = col
+                
+                if ticker_col and weight_col:
+                    print(f"Found key columns with openpyxl engine: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
+                    
+                    # Process data similar to above approaches
+                    df = df.dropna(subset=[ticker_col])
+                    
+                    result = []
+                    for i, row in df.iterrows():
+                        try:
+                            symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
+                            if not symbol:
+                                continue
+                                
+                            item = {
+                                "symbol": symbol,
+                                "rank": i + 1
+                            }
+                            
+                            if name_col and pd.notna(row[name_col]):
+                                item["name"] = str(row[name_col]).strip()
+                            else:
+                                item["name"] = f"{symbol} Inc."
+                            
+                            if weight_col and pd.notna(row[weight_col]):
+                                weight_val = row[weight_col]
+                                if isinstance(weight_val, str):
+                                    try:
+                                        weight_val = weight_val.replace('%', '').replace(',', '')
+                                        item["weight"] = float(weight_val)
+                                    except:
+                                        match = re.search(r'(\d+\.?\d*)', weight_val)
+                                        if match:
+                                            item["weight"] = float(match.group(1))
+                                else:
+                                    item["weight"] = float(weight_val)
+                                    
+                                if "weight" in item and item["weight"] < 1.0:
+                                    item["weight"] = item["weight"] * 100
+                            
+                            result.append(item)
+                        except Exception as e:
+                            print(f"Error processing row {i} with openpyxl engine: {e}")
+                            continue
+                    
+                    print(f"Processed {len(result)} SPY holdings with openpyxl engine")
+            except Exception as e:
+                print(f"Parsing with openpyxl engine failed: {e}")
+        
+        # If we have successfully parsed data, return it
+        if result and len(result) > 0:
+            print(f"Successfully processed {len(result)} SPY holdings")
+            return result
+        else:
+            print("All parsing attempts failed for SPY holdings")
+            # Fallback to hardcoded data
+            print("Falling back to hardcoded S&P 500 data...")
+            return get_sp500_components_hardcoded()
+    
+    except Exception as e:
+        print(f"Error downloading SPY holdings: {e}")
+        import traceback
+        traceback.print_exc()
+        # Fallback to hardcoded data if download fails
+        print("Falling back to hardcoded S&P 500 data...")
+        return get_sp500_components_hardcoded()
+
+def download_qqq_holdings():
+    """
+    Download the latest holdings for QQQ (Nasdaq-100 ETF) from Invesco.
+    Returns a list of holdings in standardized format.
+    
+    Improved to handle various Excel file formats and save raw files.
+    """
+    # Invesco QQQ holdings URL
+    url = "https://www.invesco.com/us/financial-products/etfs/holdings/main/holdings/0?audienceType=Investor&action=download&ticker=QQQ"
+    
+    print(f"Downloading QQQ holdings from: {url}")
+    
+    try:
+        # Download the Excel file
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        # Save the raw file for inspection
+        today = datetime.datetime.now().strftime("%Y%m%d")
+        raw_file = RAW_DIR / f"qqq_holdings_raw_{today}.xlsx"
+        with open(raw_file, 'wb') as f:
+            f.write(response.content)
+        print(f"Saved raw QQQ holdings to {raw_file}")
+        
+        # Try different parsing approaches
+        result = None
+        
+        # Approach 1: Standard parsing with skiprows=1 (typical format)
+        try:
+            df = pd.read_excel(io.BytesIO(response.content), skiprows=1)
+            
+            # Check for expected columns
+            expected_cols = ['Holding Ticker', 'Holding Name', 'Weight']
+            if all(col in df.columns for col in expected_cols):
+                print("Successfully parsed QQQ holdings with standard approach")
+                
+                # Extract key columns
+                ticker_col = 'Holding Ticker'
+                name_col = 'Holding Name'
+                weight_col = 'Weight'
+                
+                # Basic cleanup
+                df = df.dropna(subset=[ticker_col])
+                
+                # Format data into standardized structure
+                result = []
+                for i, row in df.iterrows():
+                    try:
+                        symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
+                        if not symbol:  # Skip rows without a valid ticker
+                            continue
+                            
+                        # Format the data
+                        item = {
+                            "symbol": symbol,
+                            "rank": i + 1  # 1-based rank
+                        }
+                        
+                        # Add name if available
+                        if name_col and pd.notna(row[name_col]):
+                            item["name"] = str(row[name_col]).strip()
+                        else:
+                            item["name"] = f"{symbol} Inc."
+                        
+                        # Add weight if available - handle potential formatting issues
+                        if weight_col and pd.notna(row[weight_col]):
+                            weight_val = row[weight_col]
+                            if isinstance(weight_val, str):
+                                # Try to extract numeric value if it's a string
+                                try:
+                                    # Remove % signs, commas
+                                    weight_val = weight_val.replace('%', '').replace(',', '')
+                                    item["weight"] = float(weight_val)
+                                except:
+                                    # Use regex as fallback
+                                    match = re.search(r'(\d+\.?\d*)', weight_val)
+                                    if match:
+                                        item["weight"] = float(match.group(1))
+                            else:
+                                # Numeric value
+                                item["weight"] = float(weight_val)
+                                
+                            # If weight is not in percentage form (0-100), convert it
+                            if "weight" in item and item["weight"] < 1.0:
+                                item["weight"] = item["weight"] * 100
+                        
+                        result.append(item)
+                    except Exception as e:
+                        print(f"Error processing QQQ row {i}: {e}")
+                        continue
+                
+                print(f"Processed {len(result)} QQQ holdings with standard approach")
+            else:
+                print("Standard parsing approach failed - missing expected columns")
+                print(f"Found columns: {df.columns.tolist()}")
+        except Exception as e:
+            print(f"Error with standard parsing approach: {e}")
+        
+        # Approach 2: Try different skiprows values if standard approach failed
+        if not result:
+            for skiprows in [0, 2, 3, 4]:
+                try:
+                    print(f"Trying alternative parsing with skiprows={skiprows}")
+                    df = pd.read_excel(io.BytesIO(response.content), skiprows=skiprows)
+                    
+                    # Look for key columns
+                    ticker_col = None
+                    name_col = None
+                    weight_col = None
+                    
+                    for col in df.columns:
+                        col_lower = str(col).lower()
+                        if 'ticker' in col_lower or 'symbol' in col_lower:
+                            ticker_col = col
+                        elif 'name' in col_lower or 'description' in col_lower or 'security' in col_lower:
+                            name_col = col
+                        elif 'weight' in col_lower or 'wt.' in col_lower or 'wt' in col_lower:
+                            weight_col = col
+                    
+                    if ticker_col and weight_col:
+                        print(f"Found key columns: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
+                        # Similar processing as above...
+                        df = df.dropna(subset=[ticker_col])
+                        
+                        result = []
+                        for i, row in df.iterrows():
+                            try:
+                                symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
+                                if not symbol:
+                                    continue
+                                    
+                                item = {
+                                    "symbol": symbol,
+                                    "rank": i + 1
+                                }
+                                
+                                if name_col and pd.notna(row[name_col]):
+                                    item["name"] = str(row[name_col]).strip()
+                                else:
+                                    item["name"] = f"{symbol} Inc."
+                                
+                                if weight_col and pd.notna(row[weight_col]):
+                                    weight_val = row[weight_col]
+                                    if isinstance(weight_val, str):
+                                        try:
+                                            weight_val = weight_val.replace('%', '').replace(',', '')
+                                            item["weight"] = float(weight_val)
+                                        except:
+                                            match = re.search(r'(\d+\.?\d*)', weight_val)
+                                            if match:
+                                                item["weight"] = float(match.group(1))
+                                    else:
+                                        item["weight"] = float(weight_val)
+                                        
+                                    if "weight" in item and item["weight"] < 1.0:
+                                        item["weight"] = item["weight"] * 100
+                                
+                                result.append(item)
+                            except Exception as e:
+                                print(f"Error processing row {i} with alternative approach: {e}")
+                                continue
+                        
+                        print(f"Processed {len(result)} QQQ holdings with alternative approach (skiprows={skiprows})")
+                        break
+                except Exception as e:
+                    print(f"Alternative parsing approach (skiprows={skiprows}) failed: {e}")
+        
+        # Approach 3: Try using openpyxl engine if other approaches failed
+        if not result:
+            try:
+                print("Trying parsing with openpyxl engine")
+                df = pd.read_excel(io.BytesIO(response.content), engine='openpyxl')
+                
+                # Similar column detection and processing...
+                ticker_col = None
+                name_col = None
+                weight_col = None
+                
+                for col in df.columns:
+                    col_lower = str(col).lower()
+                    if 'ticker' in col_lower or 'symbol' in col_lower:
+                        ticker_col = col
+                    elif 'name' in col_lower or 'description' in col_lower or 'security' in col_lower:
+                        name_col = col
+                    elif 'weight' in col_lower or 'wt.' in col_lower or 'wt' in col_lower:
+                        weight_col = col
+                
+                if ticker_col and weight_col:
+                    print(f"Found key columns with openpyxl engine: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
+                    
+                    # Process data similar to above approaches
+                    df = df.dropna(subset=[ticker_col])
+                    
+                    result = []
+                    for i, row in df.iterrows():
+                        try:
+                            symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
+                            if not symbol:
+                                continue
+                                
+                            item = {
+                                "symbol": symbol,
+                                "rank": i + 1
+                            }
+                            
+                            if name_col and pd.notna(row[name_col]):
+                                item["name"] = str(row[name_col]).strip()
+                            else:
+                                item["name"] = f"{symbol} Inc."
+                            
+                            if weight_col and pd.notna(row[weight_col]):
+                                weight_val = row[weight_col]
+                                if isinstance(weight_val, str):
+                                    try:
+                                        weight_val = weight_val.replace('%', '').replace(',', '')
+                                        item["weight"] = float(weight_val)
+                                    except:
+                                        match = re.search(r'(\d+\.?\d*)', weight_val)
+                                        if match:
+                                            item["weight"] = float(match.group(1))
+                                else:
+                                    item["weight"] = float(weight_val)
+                                    
+                                if "weight" in item and item["weight"] < 1.0:
+                                    item["weight"] = item["weight"] * 100
+                            
+                            result.append(item)
+                        except Exception as e:
+                            print(f"Error processing row {i} with openpyxl engine: {e}")
+                            continue
+                    
+                    print(f"Processed {len(result)} QQQ holdings with openpyxl engine")
+            except Exception as e:
+                print(f"Parsing with openpyxl engine failed: {e}")
+        
+        # If we have successfully parsed data, return it
+        if result and len(result) > 0:
+            print(f"Successfully processed {len(result)} QQQ holdings")
+            return result
+        else:
+            print("All parsing attempts failed for QQQ holdings")
+            # Fallback to hardcoded data
+            print("Falling back to hardcoded QQQ data...")
+            return get_qqq_components_hardcoded()
+    
+    except Exception as e:
+        print(f"Error downloading QQQ holdings: {e}")
+        import traceback
+        traceback.print_exc()
+        # Fallback to hardcoded data if download fails
+        print("Falling back to hardcoded QQQ data...")
+        return get_qqq_components_hardcoded()
+
+def get_sp500_components_hardcoded():
+    """
+    Hardcoded S&P 500 components as fallback.
+    """
+    print("Using hardcoded S&P 500 top components...")
     
     # Top 20 S&P 500 components with approximate weights
     sp500_components = [
@@ -122,32 +692,13 @@ def get_sp500_components():
         {"symbol": "PG", "name": "Procter & Gamble Company", "weight": 0.91, "rank": 19},
         {"symbol": "HD", "name": "Home Depot, Inc.", "weight": 0.86, "rank": 20}
     ]
-    
-    # Try to update top stocks with real data
-    # Extract symbols of top stocks
-    top_symbols = [component["symbol"] for component in sp500_components[:5]]
-    
-    # Fetch real data for top stocks
-    real_data = fetch_top_stocks_data(top_symbols, max_stocks=3)  # Limit to 3 for now
-    
-    # Update components with real data
-    for i, component in enumerate(sp500_components):
-        symbol = component["symbol"]
-        if symbol in real_data:
-            # Update with real data but keep rank and weight
-            updated_data = real_data[symbol]
-            updated_data["rank"] = component["rank"]
-            updated_data["weight"] = component["weight"]
-            sp500_components[i] = updated_data
-            print(f"Updated {symbol} with real market cap data")
-    
     return sp500_components
 
-def get_qqq_components():
+def get_qqq_components_hardcoded():
     """
-    Get QQQ (Nasdaq-100) components with real data for the top stocks.
+    Hardcoded QQQ components as fallback.
     """
-    print("Getting QQQ top components...")
+    print("Using hardcoded QQQ top components...")
     
     # Top 20 QQQ components with approximate weights
     qqq_components = [
@@ -172,24 +723,85 @@ def get_qqq_components():
         {"symbol": "QCOM", "name": "Qualcomm Inc.", "weight": 1.19, "rank": 19},
         {"symbol": "TXN", "name": "Texas Instruments Inc.", "weight": 1.15, "rank": 20}
     ]
-    
-    # Since we already fetched data for SP500, and the top stocks overlap,
-    # we'll just request one additional stock for QQQ to avoid rate limits
-    # We'll request TSLA which is more prominent in QQQ than S&P 500
-    real_data = fetch_real_data("TSLA")
-    
-    if real_data:
-        # Find Tesla in our list
-        for i, component in enumerate(qqq_components):
-            if component["symbol"] == "TSLA":
-                # Update with real data but keep rank and weight
-                real_data["rank"] = component["rank"]
-                real_data["weight"] = component["weight"]
-                qqq_components[i] = real_data
-                print("Updated Tesla with real market cap data")
-                break
-    
     return qqq_components
+
+def get_sp500_components():
+    """
+    Get S&P 500 components with real data for the top stocks.
+    Now tries to download from official source first with improved parsing.
+    """
+    print("Getting S&P 500 components...")
+    
+    try:
+        # First, try to download from official ETF provider source
+        components = download_spy_holdings()
+        
+        if not components:
+            # Fallback to hardcoded data
+            components = get_sp500_components_hardcoded()
+        
+        # Use top components list for market cap data
+        # Extract symbols of top stocks
+        top_symbols = [component["symbol"] for component in components[:10]]
+        
+        # Fetch real data for top stocks
+        real_data = fetch_top_stocks_data(top_symbols, max_stocks=10)
+        
+        # Update components with real data
+        for i, component in enumerate(components):
+            symbol = component["symbol"]
+            if symbol in real_data:
+                # Update with real data but keep rank and weight
+                updated_data = real_data[symbol].copy()
+                updated_data["rank"] = component["rank"]
+                updated_data["weight"] = component["weight"]
+                components[i] = updated_data
+                print(f"Updated {symbol} with real market cap data")
+        
+        return components
+    except Exception as e:
+        print(f"Error getting S&P 500 components: {e}")
+        # Final fallback
+        return get_sp500_components_hardcoded()
+
+def get_qqq_components():
+    """
+    Get QQQ (Nasdaq-100) components with real data for the top stocks.
+    Now tries to download from official source first with improved parsing.
+    """
+    print("Getting QQQ components...")
+    
+    try:
+        # First, try to download from official ETF provider source
+        components = download_qqq_holdings()
+        
+        if not components:
+            # Fallback to hardcoded data
+            components = get_qqq_components_hardcoded()
+        
+        # Use top components list for market cap data
+        # Extract symbols of top stocks
+        top_symbols = [component["symbol"] for component in components[:10]]
+        
+        # Fetch real data for top stocks
+        real_data = fetch_top_stocks_data(top_symbols, max_stocks=10)
+        
+        # Update components with real data
+        for i, component in enumerate(components):
+            symbol = component["symbol"]
+            if symbol in real_data:
+                # Update with real data but keep rank and weight
+                updated_data = real_data[symbol].copy()
+                updated_data["rank"] = component["rank"]
+                updated_data["weight"] = component["weight"]
+                components[i] = updated_data
+                print(f"Updated {symbol} with real market cap data")
+        
+        return components
+    except Exception as e:
+        print(f"Error getting QQQ components: {e}")
+        # Final fallback
+        return get_qqq_components_hardcoded()
 
 def load_previous_data(file_path):
     """Load previous index data from JSON file."""
@@ -218,14 +830,22 @@ def detect_changes(previous_data, current_data):
     Returns a dictionary with different types of changes.
     """
     if not previous_data:
-        return {"message": ["Initial data collection - no changes to report."], "top_changes": []}
+        return {"message": ["Initial data collection - no changes to report."], 
+                "top_changes": [],
+                "additions": [],
+                "removals": [],
+                "rank_changes": [],
+                "weight_changes": [],
+                "market_cap_changes": []}
     
     changes = {
-        "message": [],      # All changes
-        "top_changes": [],  # Changes in top positions
-        "additions": [],    # New components
-        "removals": [],     # Removed components
-        "rank_changes": []  # Position changes
+        "message": [],            # All changes
+        "top_changes": [],        # Changes in top positions
+        "additions": [],          # New components
+        "removals": [],           # Removed components
+        "rank_changes": [],       # Position changes
+        "weight_changes": [],     # Weight changes
+        "market_cap_changes": []  # Market cap changes
     }
     
     # Create dictionaries for easier comparison
@@ -265,7 +885,7 @@ def detect_changes(previous_data, current_data):
         if item['rank'] <= TOP_POSITIONS_TO_TRACK:
             changes["top_changes"].append(f"TOP {TOP_POSITIONS_TO_TRACK} REMOVAL: {item['name']} ({symbol}) removed from position #{item['rank']}")
     
-    # Check for rank changes among existing components
+    # Check for rank changes and weight changes among existing components
     for symbol in prev_symbols & curr_symbols:
         prev_rank = prev_by_symbol[symbol]["rank"]
         curr_rank = curr_by_symbol[symbol]["rank"]
@@ -278,10 +898,38 @@ def detect_changes(previous_data, current_data):
         # Only if both previous and current data have weight information
         if 'weight' in prev_by_symbol[symbol] and 'weight' in curr_by_symbol[symbol]:
             weight_change = curr_weight - prev_weight
-            if abs(weight_change) > 0.1:
+            if abs(weight_change) > 0.1:  # More than 0.1 percentage point
                 name = curr_by_symbol[symbol]["name"]
                 weight_msg = f"Weight changed from {prev_weight:.2f}% to {curr_weight:.2f}% ({weight_change:+.2f}%)"
-                changes["message"].append(f"WEIGHT CHANGE: {name} ({symbol}) - {weight_msg}")
+                weight_change_msg = f"WEIGHT CHANGE: {name} ({symbol}) - {weight_msg}"
+                changes["message"].append(weight_change_msg)
+                changes["weight_changes"].append(weight_change_msg)
+                
+                # Special focus on significant weight changes in top positions
+                if prev_rank <= TOP_POSITIONS_TO_TRACK or curr_rank <= TOP_POSITIONS_TO_TRACK:
+                    if abs(weight_change) > 0.5:  # More significant threshold for top positions
+                        changes["top_changes"].append(f"TOP {TOP_POSITIONS_TO_TRACK} SIGNIFICANT WEIGHT CHANGE: {name} ({symbol}) {weight_msg}")
+        
+        # Check for market cap changes if available
+        if 'market_cap' in prev_by_symbol[symbol] and 'market_cap' in curr_by_symbol[symbol]:
+            prev_mcap = prev_by_symbol[symbol]["market_cap"]
+            curr_mcap = curr_by_symbol[symbol]["market_cap"]
+            
+            # Calculate percentage change
+            mcap_pct_change = ((curr_mcap - prev_mcap) / prev_mcap) * 100
+            
+            # Report significant market cap changes (more than 5%)
+            if abs(mcap_pct_change) > 5:
+                name = curr_by_symbol[symbol]["name"]
+                mcap_msg = f"Market cap changed from ${prev_mcap/1e9:.2f}B to ${curr_mcap/1e9:.2f}B ({mcap_pct_change:+.2f}%)"
+                mcap_change_msg = f"MARKET CAP CHANGE: {name} ({symbol}) - {mcap_msg}"
+                changes["message"].append(mcap_change_msg)
+                changes["market_cap_changes"].append(mcap_change_msg)
+                
+                # Special focus on significant market cap changes in top positions
+                if prev_rank <= TOP_POSITIONS_TO_TRACK or curr_rank <= TOP_POSITIONS_TO_TRACK:
+                    if abs(mcap_pct_change) > 10:  # More significant threshold for top positions
+                        changes["top_changes"].append(f"TOP {TOP_POSITIONS_TO_TRACK} SIGNIFICANT MARKET CAP CHANGE: {name} ({symbol}) {mcap_msg}")
         
         # Check for rank changes
         if prev_rank != curr_rank:
@@ -310,7 +958,7 @@ def send_email_alert(index_name, changes):
         print("Email configuration missing: EMAIL_SENDER environment variable not set")
         return
     if not EMAIL_PASSWORD:
-        print("Email configuration missing: EMAIL_PASSWORD environment variable not set")
+        print("Email configuration missing: EMAIL_PASSWORD or EMAIL_APP_PASSWORD environment variable not set")
         return
     if not EMAIL_RECIPIENT:
         print("Email configuration missing: EMAIL_RECIPIENT environment variable not set")
@@ -346,21 +994,69 @@ def send_email_alert(index_name, changes):
     
     # Add top position changes with highlighting
     if changes["top_changes"]:
-        body += f"<h3>Top {TOP_POSITIONS_TO_TRACK} Position Changes:</h3>\n<ul>"
+        body += f"<h3>⭐ Top {TOP_POSITIONS_TO_TRACK} Position Changes:</h3>\n<ul>"
         for change in changes["top_changes"]:
             body += f'<li class="top-change">{change}</li>\n'
         body += "</ul>"
     
-    # Add other changes
-    other_changes = [c for c in changes["message"] if c not in changes["top_changes"]]
+    # Add other changes by category
+    # Rank changes
+    rank_changes = [c for c in changes["rank_changes"] if c not in [tc for tc in changes["top_changes"] if "MOVEMENT" in tc]]
+    if rank_changes:
+        body += "<h3>📊 Rank Changes:</h3>\n<ul>"
+        for change in rank_changes:
+            body += f'<li class="regular-change">{change}</li>\n'
+        body += "</ul>"
+    
+    # Weight changes    
+    weight_changes = [c for c in changes["weight_changes"] if c not in [tc for tc in changes["top_changes"] if "WEIGHT" in tc]]
+    if weight_changes:
+        body += "<h3>⚖️ Weight Changes:</h3>\n<ul>"
+        for change in weight_changes:
+            body += f'<li class="regular-change">{change}</li>\n'
+        body += "</ul>"
+    
+    # Market cap changes
+    market_cap_changes = [c for c in changes["market_cap_changes"] if c not in [tc for tc in changes["top_changes"] if "MARKET CAP" in tc]]
+    if market_cap_changes:
+        body += "<h3>💰 Market Cap Changes:</h3>\n<ul>"
+        for change in market_cap_changes:
+            body += f'<li class="regular-change">{change}</li>\n'
+        body += "</ul>"
+    
+    # Additions
+    additions = [c for c in changes["additions"] if c not in [tc for tc in changes["top_changes"] if "ADDITION" in tc]]
+    if additions:
+        body += "<h3>➕ Additions:</h3>\n<ul>"
+        for change in additions:
+            body += f'<li class="regular-change">{change}</li>\n'
+        body += "</ul>"
+    
+    # Removals
+    removals = [c for c in changes["removals"] if c not in [tc for tc in changes["top_changes"] if "REMOVAL" in tc]]
+    if removals:
+        body += "<h3>➖ Removals:</h3>\n<ul>"
+        for change in removals:
+            body += f'<li class="regular-change">{change}</li>\n'
+        body += "</ul>"
+    
+    # Other changes not covered in specific categories
+    other_changes = [c for c in changes["message"] 
+                    if c not in changes["top_changes"] 
+                    and c not in rank_changes
+                    and c not in weight_changes
+                    and c not in market_cap_changes
+                    and c not in changes["additions"] 
+                    and c not in changes["removals"]]
     if other_changes:
-        body += "<h3>Other Changes:</h3>\n<ul>"
+        body += "<h3>ℹ️ Other Changes:</h3>\n<ul>"
         for change in other_changes:
             body += f'<li class="regular-change">{change}</li>\n'
         body += "</ul>"
     
-    body += """
-        <p>This alert was generated automatically by your Index Change Alert System.</p>
+    body += f"""
+        <p>This alert was generated automatically by your Index Change Alert System using official ETF provider data.</p>
+        <p><small>Data source: {'State Street SPY ETF' if index_name == 'S&P 500' else 'Invesco QQQ ETF'}</small></p>
     </body>
     </html>
     """
@@ -383,6 +1079,7 @@ def send_email_alert(index_name, changes):
         print("1. Make sure you're using an App Password for EMAIL_PASSWORD, not your regular Gmail password")
         print("2. Generate an App Password at: https://myaccount.google.com/apppasswords")
         print("3. In GitHub repository settings, update the EMAIL_APP_PASSWORD secret with the new App Password")
+
 def check_for_changes(index_name, data_file, get_components_function):
     """Check for changes in the index and return detected changes."""
     try:
@@ -440,9 +1137,13 @@ def main():
     print(f"Data directory: {DATA_DIR} (Exists: {DATA_DIR.exists()})")
     
     try:
-        # Verify data directory
+        # Verify directories exist
         DATA_DIR.mkdir(exist_ok=True)
+        CACHE_DIR.mkdir(exist_ok=True)
+        RAW_DIR.mkdir(exist_ok=True)
         print(f"Created/verified data directory: {DATA_DIR}")
+        print(f"Created/verified cache directory: {CACHE_DIR}")
+        print(f"Created/verified raw files directory: {RAW_DIR}")
         
         # Check S&P 500
         sp500_changes = check_for_changes("S&P 500", SP500_FILE, get_sp500_components)
