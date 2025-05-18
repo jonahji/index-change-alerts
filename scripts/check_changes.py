@@ -7,6 +7,7 @@ import time
 import pandas as pd
 import io
 import re
+import numpy as np
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
@@ -161,6 +162,97 @@ def fetch_top_stocks_data(symbols, max_stocks=10):
     print(f"Successfully fetched data for {len(results)} out of {len(symbols_to_fetch)} stocks")
     return results
 
+def infer_weight_format(weights):
+    """
+    Infer whether weight values are already in percentage form or need conversion.
+    
+    Args:
+        weights: List of weight values
+    
+    Returns:
+        (needs_conversion, explanation): Tuple with boolean indicating if values need to be multiplied by 100
+                                         and a string explaining the reasoning
+    """
+    if not weights:
+        return False, "No weight values to analyze"
+    
+    # Calculate basic statistics
+    weights_array = np.array(weights)
+    total_weight = np.sum(weights_array)
+    max_weight = np.max(weights_array)
+    
+    # Case 1: If the total weight is already close to 100, values are likely percentages
+    if 80 <= total_weight <= 120:
+        return False, f"Total weight ({total_weight:.2f}) is close to 100%, suggesting values are already percentages"
+    
+    # Case 2: If the total weight is very small (<10), values are likely decimals needing conversion
+    if total_weight < 10:
+        return True, f"Total weight ({total_weight:.2f}) is very small, suggesting decimal values need conversion to percentages"
+    
+    # Case 3: If the maximum value is large (>50), values are likely already percentages
+    if max_weight > 25:
+        return False, f"Maximum weight ({max_weight:.2f}) exceeds typical ETF component weight, suggesting values are already percentages"
+    
+    # Case 4: If we have many small values (<1.0), but total is significant, they're likely already percentages
+    small_values = weights_array < 1.0
+    percent_small = np.mean(small_values) * 100
+    if percent_small > 70:  # If more than 70% of values are <1.0
+        return False, f"{percent_small:.1f}% of weights are <1.0, suggesting values are already small percentages"
+    
+    # Default case: assume needed conversion if most values are very small
+    return (np.mean(weights_array) < 0.5), f"Mean weight ({np.mean(weights_array):.4f}) suggests {'conversion needed' if np.mean(weights_array) < 0.5 else 'no conversion needed'}"
+
+def normalize_weights(weights, component_names=None):
+    """
+    Normalize weight values to ensure they're in percentage form (0-100%).
+    
+    Args:
+        weights: List of weight values
+        component_names: Optional list of component names for logging
+    
+    Returns:
+        List of normalized weight values in percentage form
+    """
+    if not weights:
+        return []
+    
+    weights_array = np.array(weights)
+    names = component_names if component_names else [f"Component {i+1}" for i in range(len(weights))]
+    
+    # Check if conversion needed
+    needs_conversion, explanation = infer_weight_format(weights_array)
+    print(f"Weight format analysis: {explanation}")
+    
+    # Apply conversion if needed
+    if needs_conversion:
+        print("Converting weight values from decimal to percentage (multiplying by 100)")
+        normalized = weights_array * 100
+    else:
+        normalized = weights_array
+    
+    # Check for unreasonable values
+    max_value = np.max(normalized)
+    if max_value > MAX_WEIGHT_THRESHOLD:
+        if needs_conversion:
+            print(f"WARNING: After conversion, maximum weight ({max_value:.2f}%) exceeds threshold ({MAX_WEIGHT_THRESHOLD}%).")
+            print("This suggests the weight format detection might be incorrect. Not applying conversion.")
+            normalized = weights_array  # Revert to original values
+        else:
+            print(f"WARNING: Maximum weight ({max_value:.2f}%) exceeds threshold ({MAX_WEIGHT_THRESHOLD}%).")
+            idx = np.argmax(normalized)
+            print(f"Highest weight is for {names[idx]}: {normalized[idx]:.2f}%")
+            
+            # Cap extreme values
+            extreme_mask = normalized > MAX_WEIGHT_THRESHOLD
+            if np.any(extreme_mask):
+                extreme_indices = np.where(extreme_mask)[0]
+                print(f"Capping {len(extreme_indices)} extreme weight values:")
+                for idx in extreme_indices:
+                    print(f"  - {names[idx]}: {normalized[idx]:.2f}% → {MAX_WEIGHT_THRESHOLD}%")
+                    normalized[idx] = MAX_WEIGHT_THRESHOLD
+    
+    return normalized.tolist()
+
 def download_spy_holdings():
     """
     Download the latest holdings for SPY (S&P 500 ETF) from State Street.
@@ -205,9 +297,26 @@ def download_spy_holdings():
                 # Basic cleanup
                 df = df.dropna(subset=[ticker_col])
                 
+                # Collect weight values for analysis
+                weight_vals = []
+                component_names = []
+                if weight_col:
+                    weight_vals = df[weight_col].dropna().astype(float).tolist()
+                    component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                      for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                
                 # Format data into standardized structure
                 result = []
-                total_weight = 0
+                
+                # Normalize weights if there are any
+                normalized_weights = {}
+                if weight_vals:
+                    normalized = normalize_weights(weight_vals, component_names)
+                    # Create a dictionary mapping row index to normalized weight
+                    weight_indices = df.dropna(subset=[weight_col]).index
+                    normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                
+                # Process rows
                 for i, row in df.iterrows():
                     try:
                         symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
@@ -226,44 +335,14 @@ def download_spy_holdings():
                         else:
                             item["name"] = f"{symbol} Inc."
                         
-                        # Add weight if available - handle potential formatting issues
-                        if weight_col and pd.notna(row[weight_col]):
-                            weight_val = row[weight_col]
-                            if isinstance(weight_val, str):
-                                # Try to extract numeric value if it's a string
-                                try:
-                                    # Remove % signs, commas
-                                    weight_val = weight_val.replace('%', '').replace(',', '')
-                                    item["weight"] = float(weight_val)
-                                except:
-                                    # Use regex as fallback
-                                    match = re.search(r'(\d+\.?\d*)', weight_val)
-                                    if match:
-                                        item["weight"] = float(match.group(1))
-                            else:
-                                # Numeric value
-                                item["weight"] = float(weight_val)
-                                
-                            # If weight is not in percentage form (0-100), convert it
-                            if "weight" in item:
-                                if item["weight"] < 1.0:
-                                    item["weight"] = item["weight"] * 100
-                                # Cap unreasonably large weights
-                                if item["weight"] > MAX_WEIGHT_THRESHOLD:
-                                    print(f"WARNING: Unrealistic weight value for {symbol}: {item['weight']}%. Capping to {MAX_WEIGHT_THRESHOLD}%")
-                                    item["weight"] = MAX_WEIGHT_THRESHOLD if item["weight"] > 100 else item["weight"]
-                                total_weight += item["weight"]
+                        # Add weight if available - use normalized value
+                        if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                            item["weight"] = normalized_weights[i]
                         
                         result.append(item)
                     except Exception as e:
                         print(f"Error processing SPY row {i}: {e}")
                         continue
-                
-                # Check if total weight is reasonable (should be close to 100%)
-                if total_weight > 0:
-                    print(f"Total weight of all components: {total_weight:.2f}%")
-                    if total_weight < 90 or total_weight > 110:
-                        print(f"WARNING: Total weight ({total_weight:.2f}%) is outside the expected range (90-110%). Data may be incorrect.")
                 
                 print(f"Processed {len(result)} SPY holdings with standard approach")
                 parse_method = "standard"
@@ -299,9 +378,24 @@ def download_spy_holdings():
                         # Basic cleanup
                         df = df.dropna(subset=[ticker_col])
                         
-                        # Format data into standardized structure
+                        # Collect weight values for analysis
+                        weight_vals = []
+                        component_names = []
+                        if weight_col:
+                            weight_vals = df[weight_col].dropna().astype(float).tolist()
+                            component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                              for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                        
+                        # Normalize weights if there are any
+                        normalized_weights = {}
+                        if weight_vals:
+                            normalized = normalize_weights(weight_vals, component_names)
+                            # Create a dictionary mapping row index to normalized weight
+                            weight_indices = df.dropna(subset=[weight_col]).index
+                            normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                        
+                        # Process rows
                         result = []
-                        total_weight = 0
                         for i, row in df.iterrows():
                             try:
                                 symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
@@ -318,39 +412,14 @@ def download_spy_holdings():
                                 else:
                                     item["name"] = f"{symbol} Inc."
                                 
-                                if weight_col and pd.notna(row[weight_col]):
-                                    weight_val = row[weight_col]
-                                    if isinstance(weight_val, str):
-                                        try:
-                                            weight_val = weight_val.replace('%', '').replace(',', '')
-                                            item["weight"] = float(weight_val)
-                                        except:
-                                            match = re.search(r'(\d+\.?\d*)', weight_val)
-                                            if match:
-                                                item["weight"] = float(match.group(1))
-                                    else:
-                                        item["weight"] = float(weight_val)
-                                        
-                                    # If weight is not in percentage form (0-100), convert it
-                                    if "weight" in item:
-                                        if item["weight"] < 1.0:
-                                            item["weight"] = item["weight"] * 100
-                                        # Cap unreasonably large weights
-                                        if item["weight"] > MAX_WEIGHT_THRESHOLD:
-                                            print(f"WARNING: Unrealistic weight value for {symbol}: {item['weight']}%. Capping to {MAX_WEIGHT_THRESHOLD}%")
-                                            item["weight"] = MAX_WEIGHT_THRESHOLD if item["weight"] > 100 else item["weight"]
-                                        total_weight += item["weight"]
+                                # Add weight if available - use normalized value
+                                if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                                    item["weight"] = normalized_weights[i]
                                 
                                 result.append(item)
                             except Exception as e:
                                 print(f"Error processing row {i} with alternative approach: {e}")
                                 continue
-                        
-                        # Check if total weight is reasonable (should be close to 100%)
-                        if total_weight > 0:
-                            print(f"Total weight of all components: {total_weight:.2f}%")
-                            if total_weight < 90 or total_weight > 110:
-                                print(f"WARNING: Total weight ({total_weight:.2f}%) is outside the expected range (90-110%). Data may be incorrect.")
                         
                         print(f"Processed {len(result)} SPY holdings with alternative approach (skiprows={skiprows})")
                         parse_method = f"alternative-{skiprows}"
@@ -384,8 +453,23 @@ def download_spy_holdings():
                     # Process data similar to above approaches
                     df = df.dropna(subset=[ticker_col])
                     
+                    # Collect weight values for analysis
+                    weight_vals = []
+                    component_names = []
+                    if weight_col:
+                        weight_vals = df[weight_col].dropna().astype(float).tolist()
+                        component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                          for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                    
+                    # Normalize weights if there are any
+                    normalized_weights = {}
+                    if weight_vals:
+                        normalized = normalize_weights(weight_vals, component_names)
+                        # Create a dictionary mapping row index to normalized weight
+                        weight_indices = df.dropna(subset=[weight_col]).index
+                        normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                    
                     result = []
-                    total_weight = 0
                     for i, row in df.iterrows():
                         try:
                             symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
@@ -402,39 +486,14 @@ def download_spy_holdings():
                             else:
                                 item["name"] = f"{symbol} Inc."
                             
-                            if weight_col and pd.notna(row[weight_col]):
-                                weight_val = row[weight_col]
-                                if isinstance(weight_val, str):
-                                    try:
-                                        weight_val = weight_val.replace('%', '').replace(',', '')
-                                        item["weight"] = float(weight_val)
-                                    except:
-                                        match = re.search(r'(\d+\.?\d*)', weight_val)
-                                        if match:
-                                            item["weight"] = float(match.group(1))
-                                else:
-                                    item["weight"] = float(weight_val)
-                                    
-                                # Process weight values
-                                if "weight" in item:
-                                    if item["weight"] < 1.0:
-                                        item["weight"] = item["weight"] * 100
-                                    # Cap unreasonably large weights
-                                    if item["weight"] > MAX_WEIGHT_THRESHOLD:
-                                        print(f"WARNING: Unrealistic weight value for {symbol}: {item['weight']}%. Capping to {MAX_WEIGHT_THRESHOLD}%")
-                                        item["weight"] = MAX_WEIGHT_THRESHOLD if item["weight"] > 100 else item["weight"]
-                                    total_weight += item["weight"]
+                            # Add weight if available - use normalized value
+                            if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                                item["weight"] = normalized_weights[i]
                             
                             result.append(item)
                         except Exception as e:
                             print(f"Error processing row {i} with openpyxl engine: {e}")
                             continue
-                    
-                    # Check if total weight is reasonable
-                    if total_weight > 0:
-                        print(f"Total weight of all components: {total_weight:.2f}%")
-                        if total_weight < 90 or total_weight > 110:
-                            print(f"WARNING: Total weight ({total_weight:.2f}%) is outside the expected range (90-110%). Data may be incorrect.")
                     
                     print(f"Processed {len(result)} SPY holdings with openpyxl engine")
                     parse_method = "openpyxl"
@@ -543,9 +602,24 @@ def download_qqq_holdings():
                                 # Basic cleanup
                                 df = df.dropna(subset=[ticker_col])
                                 
+                                # Collect weight values for analysis
+                                weight_vals = []
+                                component_names = []
+                                if weight_col:
+                                    weight_vals = df[weight_col].dropna().astype(float).tolist()
+                                    component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                                       for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                                
+                                # Normalize weights if there are any
+                                normalized_weights = {}
+                                if weight_vals:
+                                    normalized = normalize_weights(weight_vals, component_names)
+                                    # Create a dictionary mapping row index to normalized weight
+                                    weight_indices = df.dropna(subset=[weight_col]).index
+                                    normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                                
                                 # Format data into standardized structure
                                 result = []
-                                total_weight = 0
                                 for i, row in df.iterrows():
                                     try:
                                         symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
@@ -562,39 +636,14 @@ def download_qqq_holdings():
                                         else:
                                             item["name"] = f"{symbol} Inc."
                                         
-                                        if weight_col and pd.notna(row[weight_col]):
-                                            weight_val = row[weight_col]
-                                            if isinstance(weight_val, str):
-                                                try:
-                                                    weight_val = weight_val.replace('%', '').replace(',', '')
-                                                    item["weight"] = float(weight_val)
-                                                except:
-                                                    match = re.search(r'(\d+\.?\d*)', weight_val)
-                                                    if match:
-                                                        item["weight"] = float(match.group(1))
-                                            else:
-                                                item["weight"] = float(weight_val)
-                                            
-                                            # Process weight values
-                                            if "weight" in item:
-                                                if item["weight"] < 1.0:
-                                                    item["weight"] = item["weight"] * 100
-                                                # Cap unreasonably large weights
-                                                if item["weight"] > MAX_WEIGHT_THRESHOLD:
-                                                    print(f"WARNING: Unrealistic weight value for {symbol}: {item['weight']}%. Capping to {MAX_WEIGHT_THRESHOLD}%")
-                                                    item["weight"] = MAX_WEIGHT_THRESHOLD if item["weight"] > 100 else item["weight"]
-                                                total_weight += item["weight"]
+                                        # Add weight if available - use normalized value
+                                        if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                                            item["weight"] = normalized_weights[i]
                                         
                                         result.append(item)
                                     except Exception as e:
                                         print(f"Error processing row {i} with CSV approach: {e}")
                                         continue
-                                
-                                # Check if total weight is reasonable
-                                if total_weight > 0:
-                                    print(f"Total weight of all components: {total_weight:.2f}%")
-                                    if total_weight < 90 or total_weight > 110:
-                                        print(f"WARNING: Total weight ({total_weight:.2f}%) is outside the expected range (90-110%). Data may be incorrect.")
                                 
                                 print(f"Processed {len(result)} QQQ holdings with CSV approach")
                                 parse_method = f"csv-{encoding}-{delimiter}"
@@ -626,9 +675,24 @@ def download_qqq_holdings():
                     # Basic cleanup
                     df = df.dropna(subset=[ticker_col])
                     
+                    # Collect weight values for analysis
+                    weight_vals = []
+                    component_names = []
+                    if weight_col:
+                        weight_vals = df[weight_col].dropna().astype(float).tolist()
+                        component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                           for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                    
+                    # Normalize weights if there are any
+                    normalized_weights = {}
+                    if weight_vals:
+                        normalized = normalize_weights(weight_vals, component_names)
+                        # Create a dictionary mapping row index to normalized weight
+                        weight_indices = df.dropna(subset=[weight_col]).index
+                        normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                    
                     # Format data into standardized structure
                     result = []
-                    total_weight = 0
                     for i, row in df.iterrows():
                         try:
                             symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
@@ -647,44 +711,14 @@ def download_qqq_holdings():
                             else:
                                 item["name"] = f"{symbol} Inc."
                             
-                            # Add weight if available - handle potential formatting issues
-                            if weight_col and pd.notna(row[weight_col]):
-                                weight_val = row[weight_col]
-                                if isinstance(weight_val, str):
-                                    # Try to extract numeric value if it's a string
-                                    try:
-                                        # Remove % signs, commas
-                                        weight_val = weight_val.replace('%', '').replace(',', '')
-                                        item["weight"] = float(weight_val)
-                                    except:
-                                        # Use regex as fallback
-                                        match = re.search(r'(\d+\.?\d*)', weight_val)
-                                        if match:
-                                            item["weight"] = float(match.group(1))
-                                else:
-                                    # Numeric value
-                                    item["weight"] = float(weight_val)
-                                    
-                                # Process weight values
-                                if "weight" in item:
-                                    if item["weight"] < 1.0:
-                                        item["weight"] = item["weight"] * 100
-                                    # Cap unreasonably large weights
-                                    if item["weight"] > MAX_WEIGHT_THRESHOLD:
-                                        print(f"WARNING: Unrealistic weight value for {symbol}: {item['weight']}%. Capping to {MAX_WEIGHT_THRESHOLD}%")
-                                        item["weight"] = MAX_WEIGHT_THRESHOLD if item["weight"] > 100 else item["weight"]
-                                    total_weight += item["weight"]
+                            # Add weight if available - use normalized value
+                            if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                                item["weight"] = normalized_weights[i]
                             
                             result.append(item)
                         except Exception as e:
                             print(f"Error processing QQQ row {i}: {e}")
                             continue
-                    
-                    # Check if total weight is reasonable
-                    if total_weight > 0:
-                        print(f"Total weight of all components: {total_weight:.2f}%")
-                        if total_weight < 90 or total_weight > 110:
-                            print(f"WARNING: Total weight ({total_weight:.2f}%) is outside the expected range (90-110%). Data may be incorrect.")
                     
                     print(f"Processed {len(result)} QQQ holdings with standard approach")
                     parse_method = "standard"
@@ -717,11 +751,26 @@ def download_qqq_holdings():
                     
                     if ticker_col and weight_col:
                         print(f"Found key columns: Ticker={ticker_col}, Name={name_col}, Weight={weight_col}")
-                        # Similar processing as above...
+                        # Basic cleanup
                         df = df.dropna(subset=[ticker_col])
                         
+                        # Collect weight values for analysis
+                        weight_vals = []
+                        component_names = []
+                        if weight_col:
+                            weight_vals = df[weight_col].dropna().astype(float).tolist()
+                            component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                               for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                        
+                        # Normalize weights if there are any
+                        normalized_weights = {}
+                        if weight_vals:
+                            normalized = normalize_weights(weight_vals, component_names)
+                            # Create a dictionary mapping row index to normalized weight
+                            weight_indices = df.dropna(subset=[weight_col]).index
+                            normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                        
                         result = []
-                        total_weight = 0
                         for i, row in df.iterrows():
                             try:
                                 symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
@@ -738,39 +787,14 @@ def download_qqq_holdings():
                                 else:
                                     item["name"] = f"{symbol} Inc."
                                 
-                                if weight_col and pd.notna(row[weight_col]):
-                                    weight_val = row[weight_col]
-                                    if isinstance(weight_val, str):
-                                        try:
-                                            weight_val = weight_val.replace('%', '').replace(',', '')
-                                            item["weight"] = float(weight_val)
-                                        except:
-                                            match = re.search(r'(\d+\.?\d*)', weight_val)
-                                            if match:
-                                                item["weight"] = float(match.group(1))
-                                    else:
-                                        item["weight"] = float(weight_val)
-                                        
-                                    # Process weight values
-                                    if "weight" in item:
-                                        if item["weight"] < 1.0:
-                                            item["weight"] = item["weight"] * 100
-                                        # Cap unreasonably large weights
-                                        if item["weight"] > MAX_WEIGHT_THRESHOLD:
-                                            print(f"WARNING: Unrealistic weight value for {symbol}: {item['weight']}%. Capping to {MAX_WEIGHT_THRESHOLD}%")
-                                            item["weight"] = MAX_WEIGHT_THRESHOLD if item["weight"] > 100 else item["weight"]
-                                        total_weight += item["weight"]
+                                # Add weight if available - use normalized value
+                                if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                                    item["weight"] = normalized_weights[i]
                                 
                                 result.append(item)
                             except Exception as e:
                                 print(f"Error processing row {i} with alternative approach: {e}")
                                 continue
-                        
-                        # Check if total weight is reasonable
-                        if total_weight > 0:
-                            print(f"Total weight of all components: {total_weight:.2f}%")
-                            if total_weight < 90 or total_weight > 110:
-                                print(f"WARNING: Total weight ({total_weight:.2f}%) is outside the expected range (90-110%). Data may be incorrect.")
                         
                         print(f"Processed {len(result)} QQQ holdings with alternative approach (skiprows={skiprows})")
                         parse_method = f"alternative-{skiprows}"
@@ -804,8 +828,23 @@ def download_qqq_holdings():
                     # Process data similar to above approaches
                     df = df.dropna(subset=[ticker_col])
                     
+                    # Collect weight values for analysis
+                    weight_vals = []
+                    component_names = []
+                    if weight_col:
+                        weight_vals = df[weight_col].dropna().astype(float).tolist()
+                        component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
+                                           for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                    
+                    # Normalize weights if there are any
+                    normalized_weights = {}
+                    if weight_vals:
+                        normalized = normalize_weights(weight_vals, component_names)
+                        # Create a dictionary mapping row index to normalized weight
+                        weight_indices = df.dropna(subset=[weight_col]).index
+                        normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                    
                     result = []
-                    total_weight = 0
                     for i, row in df.iterrows():
                         try:
                             symbol = str(row[ticker_col]).strip() if pd.notna(row[ticker_col]) else ""
@@ -822,39 +861,14 @@ def download_qqq_holdings():
                             else:
                                 item["name"] = f"{symbol} Inc."
                             
-                            if weight_col and pd.notna(row[weight_col]):
-                                weight_val = row[weight_col]
-                                if isinstance(weight_val, str):
-                                    try:
-                                        weight_val = weight_val.replace('%', '').replace(',', '')
-                                        item["weight"] = float(weight_val)
-                                    except:
-                                        match = re.search(r'(\d+\.?\d*)', weight_val)
-                                        if match:
-                                            item["weight"] = float(match.group(1))
-                                else:
-                                    item["weight"] = float(weight_val)
-                                    
-                                # Process weight values
-                                if "weight" in item:
-                                    if item["weight"] < 1.0:
-                                        item["weight"] = item["weight"] * 100
-                                    # Cap unreasonably large weights
-                                    if item["weight"] > MAX_WEIGHT_THRESHOLD:
-                                        print(f"WARNING: Unrealistic weight value for {symbol}: {item['weight']}%. Capping to {MAX_WEIGHT_THRESHOLD}%")
-                                        item["weight"] = MAX_WEIGHT_THRESHOLD if item["weight"] > 100 else item["weight"]
-                                    total_weight += item["weight"]
+                            # Add weight if available - use normalized value
+                            if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
+                                item["weight"] = normalized_weights[i]
                             
                             result.append(item)
                         except Exception as e:
                             print(f"Error processing row {i} with openpyxl engine: {e}")
                             continue
-                    
-                    # Check if total weight is reasonable
-                    if total_weight > 0:
-                        print(f"Total weight of all components: {total_weight:.2f}%")
-                        if total_weight < 90 or total_weight > 110:
-                            print(f"WARNING: Total weight ({total_weight:.2f}%) is outside the expected range (90-110%). Data may be incorrect.")
                     
                     print(f"Processed {len(result)} QQQ holdings with openpyxl engine")
                     parse_method = "openpyxl"
