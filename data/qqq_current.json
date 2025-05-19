@@ -2,7 +2,7 @@
   {
     "symbol": "AAPL",
     "name": "Apple Inc",
-    "market_cap": 3158189015000.0,
+    "market_cap": 3155336888000.0,
     "real_data": true,
     "rank": 1,
     "weight": 11.94
@@ -34,7 +34,7 @@
   {
     "symbol": "META",
     "name": "Meta Platforms Inc.",
-    "market_cap": 1618926764000.0,
+    "market_cap": 1610026189000.0,
     "real_data": true,
     "rank": 5,
     "weight": 4.99
@@ -50,34 +50,28 @@
   {
     "symbol": "GOOG",
     "name": "Alphabet Inc Class C",
-    "market_cap": 1997473317000.0,
+    "market_cap": 2023441695000.0,
     "real_data": true,
     "rank": 7,
     "weight": 3.49
   },
   {
     "symbol": "GOOGL",
-    "name": "Alphabet Inc Class A",
-    "market_cap": 1997470826000.0,
-    "real_data": true,
-    "rank": 8,
-    "weight": 3.15
+    "name": "Alphabet Inc. Class A",
+    "weight": 3.15,
+    "rank": 8
   },
   {
     "symbol": "AVGO",
-    "name": "Broadcom Inc",
-    "market_cap": 1074912756000.0,
-    "real_data": true,
-    "rank": 9,
-    "weight": 2.79
+    "name": "Broadcom Inc.",
+    "weight": 2.79,
+    "rank": 9
   },
   {
     "symbol": "COST",
-    "name": "Costco Wholesale Corp",
-    "market_cap": 455143326000.0,
-    "real_data": true,
-    "rank": 10,
-    "weight": 2.21
+    "name": "Costco Wholesale Corp.",
+    "weight": 2.21,
+    "rank": 10
   },
   {
     "symbol": "CSCO",

@@ -2,7 +2,7 @@
   {
     "symbol": "AAPL",
     "name": "Apple Inc",
-    "market_cap": 3158189015000.0,
+    "market_cap": 3155336888000.0,
     "real_data": true,
     "rank": 1,
     "weight": 7.24
@@ -34,7 +34,7 @@
   {
     "symbol": "META",
     "name": "Meta Platforms Inc.",
-    "market_cap": 1618926764000.0,
+    "market_cap": 1610026189000.0,
     "real_data": true,
     "rank": 5,
     "weight": 2.34
@@ -42,7 +42,7 @@
   {
     "symbol": "GOOG",
     "name": "Alphabet Inc Class C",
-    "market_cap": 1997473317000.0,
+    "market_cap": 2023441695000.0,
     "real_data": true,
     "rank": 6,
     "weight": 1.98
@@ -50,7 +50,7 @@
   {
     "symbol": "GOOGL",
     "name": "Alphabet Inc Class A",
-    "market_cap": 1997470826000.0,
+    "market_cap": 2023446413000.0,
     "real_data": true,
     "rank": 7,
     "weight": 1.71
