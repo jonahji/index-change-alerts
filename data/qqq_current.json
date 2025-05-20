@@ -2,7 +2,7 @@
   {
     "symbol": "AAPL",
     "name": "Apple Inc",
-    "market_cap": 3155336888000.0,
+    "market_cap": 3118296203000.0,
     "real_data": true,
     "rank": 1,
     "weight": 11.94
@@ -10,7 +10,7 @@
   {
     "symbol": "MSFT",
     "name": "Microsoft Corporation",
-    "market_cap": 3376379855000.0,
+    "market_cap": 3410569724000.0,
     "real_data": true,
     "rank": 2,
     "weight": 10.2
@@ -18,7 +18,7 @@
   {
     "symbol": "NVDA",
     "name": "NVIDIA Corporation",
-    "market_cap": 3302080905000.0,
+    "market_cap": 3306227237000.0,
     "real_data": true,
     "rank": 3,
     "weight": 7.52
@@ -26,7 +26,7 @@
   {
     "symbol": "AMZN",
     "name": "Amazon.com Inc",
-    "market_cap": 2182625624000.0,
+    "market_cap": 2188677087000.0,
     "real_data": true,
     "rank": 4,
     "weight": 6.82
@@ -34,7 +34,7 @@
   {
     "symbol": "META",
     "name": "Meta Platforms Inc.",
-    "market_cap": 1610026189000.0,
+    "market_cap": 1610252419000.0,
     "real_data": true,
     "rank": 5,
     "weight": 4.99
@@ -42,7 +42,7 @@
   {
     "symbol": "TSLA",
     "name": "Tesla Inc",
-    "market_cap": 1127271629000.0,
+    "market_cap": 1101858210000.0,
     "real_data": true,
     "rank": 6,
     "weight": 3.53
@@ -50,28 +50,34 @@
   {
     "symbol": "GOOG",
     "name": "Alphabet Inc Class C",
-    "market_cap": 2023441695000.0,
+    "market_cap": 2028188467000.0,
     "real_data": true,
     "rank": 7,
     "weight": 3.49
   },
   {
     "symbol": "GOOGL",
-    "name": "Alphabet Inc. Class A",
-    "weight": 3.15,
-    "rank": 8
+    "name": "Alphabet Inc Class A",
+    "market_cap": 2027707695000.0,
+    "real_data": true,
+    "rank": 8,
+    "weight": 3.15
   },
   {
     "symbol": "AVGO",
-    "name": "Broadcom Inc.",
-    "weight": 2.79,
-    "rank": 9
+    "name": "Broadcom Inc",
+    "market_cap": 1084410757000.0,
+    "real_data": true,
+    "rank": 9,
+    "weight": 2.79
   },
   {
     "symbol": "COST",
-    "name": "Costco Wholesale Corp.",
-    "weight": 2.21,
-    "rank": 10
+    "name": "Costco Wholesale Corp",
+    "market_cap": 458919051000.0,
+    "real_data": true,
+    "rank": 10,
+    "weight": 2.21
   },
   {
     "symbol": "CSCO",
