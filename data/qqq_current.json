@@ -2,7 +2,7 @@
   {
     "symbol": "AAPL",
     "name": "Apple Inc",
-    "market_cap": 3189539340000.0,
+    "market_cap": 3136667255000.0,
     "real_data": true,
     "rank": 1,
     "weight": 11.94
@@ -10,7 +10,7 @@
   {
     "symbol": "MSFT",
     "name": "Microsoft Corporation",
-    "market_cap": 3707650441000.0,
+    "market_cap": 3699327369000.0,
     "real_data": true,
     "rank": 2,
     "weight": 10.2
@@ -18,7 +18,7 @@
   {
     "symbol": "NVDA",
     "name": "NVIDIA Corporation",
-    "market_cap": 3885915439000.0,
+    "market_cap": 3902016061000.0,
     "real_data": true,
     "rank": 3,
     "weight": 7.52
@@ -26,7 +26,7 @@
   {
     "symbol": "AMZN",
     "name": "Amazon.com Inc",
-    "market_cap": 2372446978000.0,
+    "market_cap": 2372444094000.0,
     "real_data": true,
     "rank": 4,
     "weight": 6.82
@@ -34,21 +34,23 @@
   {
     "symbol": "META",
     "name": "Meta Platforms Inc.",
-    "market_cap": 1807828255000.0,
+    "market_cap": 1806164689000.0,
     "real_data": true,
     "rank": 5,
     "weight": 4.99
   },
   {
     "symbol": "TSLA",
-    "name": "Tesla Inc.",
-    "weight": 3.53,
-    "rank": 6
+    "name": "Tesla Inc",
+    "market_cap": 959234114000.0,
+    "real_data": true,
+    "rank": 6,
+    "weight": 3.53
   },
   {
     "symbol": "GOOG",
     "name": "Alphabet Inc Class C",
-    "market_cap": 2184112243000.0,
+    "market_cap": 2149511070000.0,
     "real_data": true,
     "rank": 7,
     "weight": 3.49
@@ -56,7 +58,7 @@
   {
     "symbol": "GOOGL",
     "name": "Alphabet Inc Class A",
-    "market_cap": 2184116568000.0,
+    "market_cap": 2149510021000.0,
     "real_data": true,
     "rank": 8,
     "weight": 3.15
@@ -64,7 +66,7 @@
   {
     "symbol": "AVGO",
     "name": "Broadcom Inc",
-    "market_cap": 1294302183000.0,
+    "market_cap": 1289598534000.0,
     "real_data": true,
     "rank": 9,
     "weight": 2.79
