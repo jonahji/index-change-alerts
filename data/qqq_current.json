@@ -2,7 +2,7 @@
   {
     "symbol": "AAPL",
     "name": "Apple Inc",
-    "market_cap": 3420563964000.0,
+    "market_cap": 3451283309000.0,
     "real_data": true,
     "rank": 1,
     "weight": 11.94
@@ -10,7 +10,7 @@
   {
     "symbol": "MSFT",
     "name": "Microsoft Corporation",
-    "market_cap": 3766684484000.0,
+    "market_cap": 3788240847000.0,
     "real_data": true,
     "rank": 2,
     "weight": 10.2
@@ -18,7 +18,7 @@
   {
     "symbol": "NVDA",
     "name": "NVIDIA Corporation",
-    "market_cap": 4428788138000.0,
+    "market_cap": 4393913811000.0,
     "real_data": true,
     "rank": 3,
     "weight": 7.52
@@ -26,7 +26,7 @@
   {
     "symbol": "AMZN",
     "name": "Amazon.com Inc",
-    "market_cap": 2443541742000.0,
+    "market_cap": 2469990760000.0,
     "real_data": true,
     "rank": 4,
     "weight": 6.82
@@ -34,7 +34,7 @@
   {
     "symbol": "META",
     "name": "Meta Platforms Inc.",
-    "market_cap": 1877523169000.0,
+    "market_cap": 1886893507000.0,
     "real_data": true,
     "rank": 5,
     "weight": 4.99
@@ -42,7 +42,7 @@
   {
     "symbol": "TSLA",
     "name": "Tesla Inc",
-    "market_cap": 1127617397000.0,
+    "market_cap": 1115941241000.0,
     "real_data": true,
     "rank": 6,
     "weight": 3.53
@@ -50,7 +50,7 @@
   {
     "symbol": "GOOG",
     "name": "Alphabet Inc Class C",
-    "market_cap": 2513219617000.0,
+    "market_cap": 2513229054000.0,
     "real_data": true,
     "rank": 7,
     "weight": 3.49
@@ -58,7 +58,7 @@
   {
     "symbol": "GOOGL",
     "name": "Alphabet Inc Class A",
-    "market_cap": 2513225908000.0,
+    "market_cap": 2513225122000.0,
     "real_data": true,
     "rank": 8,
     "weight": 3.15
@@ -66,7 +66,7 @@
   {
     "symbol": "AVGO",
     "name": "Broadcom Inc",
-    "market_cap": 1412216914000.0,
+    "market_cap": 1451725947000.0,
     "real_data": true,
     "rank": 9,
     "weight": 2.79
@@ -74,7 +74,7 @@
   {
     "symbol": "COST",
     "name": "Costco Wholesale Corp",
-    "market_cap": 421090296000.0,
+    "market_cap": 421090230000.0,
     "real_data": true,
     "rank": 10,
     "weight": 2.21
