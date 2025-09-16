@@ -1,113 +1,123 @@
 [
   {
     "symbol": "AAPL",
-    "name": "Apple Inc",
-    "market_cap": 3473692426000.0,
-    "real_data": true,
+    "name": "Apple Inc.",
+    "weight": 11.94,
     "rank": 1,
-    "weight": 11.94
+    "market_cap": 3473692426000.0,
+    "real_data": true
   },
   {
     "symbol": "MSFT",
     "name": "Microsoft Corporation",
-    "market_cap": 3790173372000.0,
-    "real_data": true,
+    "weight": 10.2,
     "rank": 2,
-    "weight": 10.2
+    "market_cap": 3790173372000.0,
+    "real_data": true
   },
   {
     "symbol": "NVDA",
     "name": "NVIDIA Corporation",
-    "market_cap": 4329383920000.0,
-    "real_data": true,
+    "weight": 7.52,
     "rank": 3,
-    "weight": 7.52
+    "market_cap": 4329383920000.0,
+    "real_data": true
   },
   {
     "symbol": "AMZN",
-    "name": "Amazon.com Inc",
-    "market_cap": 2433196753000.0,
-    "real_data": true,
+    "name": "Amazon.com Inc.",
+    "weight": 6.82,
     "rank": 4,
-    "weight": 6.82
+    "market_cap": 2433196753000.0,
+    "real_data": true
   },
   {
     "symbol": "META",
-    "name": "Meta Platforms Inc.",
-    "market_cap": 1898148004000.0,
-    "real_data": true,
+    "name": "Meta Platforms Inc. Class A",
+    "weight": 4.99,
     "rank": 5,
-    "weight": 4.99
+    "market_cap": 1898148004000.0,
+    "real_data": true
   },
   {
     "symbol": "TSLA",
-    "name": "Tesla Inc",
-    "market_cap": 1277084697000.0,
-    "real_data": true,
+    "name": "Tesla Inc.",
+    "weight": 3.53,
     "rank": 6,
-    "weight": 3.53
+    "market_cap": 1277084697000.0,
+    "real_data": true
   },
   {
     "symbol": "GOOG",
-    "name": "Alphabet Inc Class C",
-    "market_cap": 2915387834000.0,
-    "real_data": true,
+    "name": "Alphabet Inc. Class C",
+    "weight": 3.49,
     "rank": 7,
-    "weight": 3.49
+    "market_cap": 2915387834000.0,
+    "real_data": true
   },
   {
     "symbol": "GOOGL",
-    "name": "Alphabet Inc Class A",
-    "market_cap": 2915389669000.0,
-    "real_data": true,
+    "name": "Alphabet Inc. Class A",
+    "weight": 3.15,
     "rank": 8,
-    "weight": 3.15
+    "market_cap": 2915389669000.0,
+    "real_data": true
   },
   {
     "symbol": "AVGO",
-    "name": "Broadcom Inc",
-    "market_cap": 1699435643000.0,
-    "real_data": true,
+    "name": "Broadcom Inc.",
+    "weight": 2.79,
     "rank": 9,
-    "weight": 2.79
+    "market_cap": 1719363961000.0,
+    "real_data": true
   },
   {
     "symbol": "COST",
-    "name": "Costco Wholesale Corp",
-    "market_cap": 429241401000.0,
-    "real_data": true,
+    "name": "Costco Wholesale Corporation",
+    "weight": 2.21,
     "rank": 10,
-    "weight": 2.21
+    "market_cap": 429241401000.0,
+    "real_data": true
+  },
+  {
+    "symbol": "ASML",
+    "name": "ASML Holding NV ADR",
+    "weight": 1.95,
+    "rank": 11,
+    "market_cap": 320013697000.0,
+    "real_data": true
+  },
+  {
+    "symbol": "ADBE",
+    "name": "Adobe Systems Incorporated",
+    "weight": 1.92,
+    "rank": 12,
+    "market_cap": 148198506000.0,
+    "real_data": true
   },
   {
     "symbol": "CSCO",
     "name": "Cisco Systems Inc.",
-    "weight": 1.95,
-    "rank": 11
-  },
-  {
-    "symbol": "ADBE",
-    "name": "Adobe Inc.",
-    "weight": 1.92,
-    "rank": 12
-  },
-  {
-    "symbol": "TMUS",
-    "name": "T-Mobile US Inc.",
     "weight": 1.87,
-    "rank": 13
+    "rank": 13,
+    "market_cap": 263006405000.0,
+    "real_data": true
   },
   {
     "symbol": "AMD",
     "name": "Advanced Micro Devices Inc.",
     "weight": 1.49,
-    "rank": 14
+    "rank": 14,
+    "market_cap": 257333756000.0,
+    "real_data": true
   },
   {
     "symbol": "PEP",
     "name": "PepsiCo Inc.",
     "weight": 1.47,
-    "rank": 15
+    "rank": 15,
+    "market_cap": 196504060000.0,
+    "real_data": true
   },
   {
     "symbol": "NFLX",
@@ -116,26 +126,26 @@
     "rank": 16
   },
   {
-    "symbol": "CMCSA",
-    "name": "Comcast Corp. Class A",
+    "symbol": "TMUS",
+    "name": "T-Mobile US Inc.",
     "weight": 1.37,
     "rank": 17
   },
   {
-    "symbol": "INTU",
-    "name": "Intuit Inc.",
+    "symbol": "CMCSA",
+    "name": "Comcast Corporation Class A",
     "weight": 1.33,
     "rank": 18
   },
   {
-    "symbol": "QCOM",
-    "name": "Qualcomm Inc.",
+    "symbol": "INTU",
+    "name": "Intuit Inc.",
     "weight": 1.19,
     "rank": 19
   },
   {
-    "symbol": "TXN",
-    "name": "Texas Instruments Inc.",
+    "symbol": "QCOM",
+    "name": "QUALCOMM Incorporated",
     "weight": 1.15,
     "rank": 20
   }
