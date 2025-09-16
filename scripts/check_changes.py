@@ -203,28 +203,42 @@ def infer_weight_format(weights):
 
 def normalize_weights(weights, component_names=None):
     """
-    Enhanced weight normalization with better validation and error handling.
+    Enhanced weight normalization with robust error handling and validation.
 
     Args:
-        weights: List of weight values
+        weights: List of weight values (can contain None, NaN, strings)
         component_names: Optional list of component names for logging
 
     Returns:
         List of normalized weight values in percentage form
     """
     if not weights:
+        print("ℹ️  No weight data provided for normalization")
         return []
 
-    weights_array = np.array(weights)
-    names = component_names if component_names else [f"Component {i+1}" for i in range(len(weights))]
+    try:
+        # Safe conversion to numeric array
+        weights_array = pd.to_numeric(weights, errors='coerce').values
+        names = component_names if component_names else [f"Component {i+1}" for i in range(len(weights))]
 
-    # Enhanced validation: Check for invalid values
-    invalid_mask = np.isnan(weights_array) | np.isinf(weights_array) | (weights_array < 0)
-    if np.any(invalid_mask):
-        invalid_count = np.sum(invalid_mask)
-        print(f"WARNING: Found {invalid_count} invalid weight values (NaN, inf, or negative)")
-        # Replace invalid values with 0
-        weights_array = np.where(invalid_mask, 0, weights_array)
+        # Enhanced validation: Check for invalid values
+        invalid_mask = pd.isna(weights_array) | np.isinf(weights_array) | (weights_array < 0)
+        if np.any(invalid_mask):
+            invalid_count = np.sum(invalid_mask)
+            print(f"⚠️  WARNING: Found {invalid_count} invalid weight values (NaN, inf, or negative)")
+            # Replace invalid values with 0 and log them
+            invalid_indices = np.where(invalid_mask)[0]
+            for idx in invalid_indices[:5]:  # Log first 5 invalid values
+                if idx < len(names):
+                    print(f"     Invalid weight for {names[idx]}: {weights[idx]}")
+            if len(invalid_indices) > 5:
+                print(f"     ... and {len(invalid_indices) - 5} more invalid values")
+            weights_array = np.where(invalid_mask, 0, weights_array)
+
+    except Exception as e:
+        print(f"❌ Error in weight array conversion: {e}")
+        print(f"   Input weights sample: {weights[:5] if len(weights) > 5 else weights}")
+        return []
 
     # Check if conversion needed
     needs_conversion, explanation = infer_weight_format(weights_array)
@@ -276,35 +290,83 @@ def normalize_weights(weights, component_names=None):
 
 def validate_qqq_data(components):
     """
-    Enhanced validation for QQQ component data.
+    Comprehensive validation for QQQ component data with robust null handling.
 
     Args:
-        components: List of component dictionaries
+        components: List of component dictionaries (may contain None values)
 
     Returns:
         (is_valid, validation_report): Tuple with boolean and detailed report
     """
     if not components:
-        return False, "No components data provided"
+        return False, "❌ No components data provided"
+
+    # Filter out None/invalid components
+    valid_components = [comp for comp in components if comp and isinstance(comp, dict)]
+    if len(valid_components) != len(components):
+        invalid_count = len(components) - len(valid_components)
+        print(f"⚠️  Filtered out {invalid_count} invalid/None components")
+        components = valid_components
+
+    if not components:
+        return False, "❌ No valid components after filtering"
 
     report = []
     warnings = []
     errors = []
 
-    # Basic structure validation
+    # Enhanced structure validation with null safety
     required_fields = ['symbol', 'name', 'rank']
     for i, comp in enumerate(components):
-        missing_fields = [field for field in required_fields if field not in comp]
+        if not isinstance(comp, dict):
+            errors.append(f"Component {i+1}: Invalid data type (expected dict, got {type(comp)})")
+            continue
+
+        missing_fields = []
+        invalid_fields = []
+
+        for field in required_fields:
+            if field not in comp:
+                missing_fields.append(field)
+            elif comp[field] is None or (isinstance(comp[field], str) and not comp[field].strip()):
+                invalid_fields.append(f"{field}=None/empty")
+            elif field == 'rank' and not isinstance(comp[field], (int, float)):
+                invalid_fields.append(f"{field}=non-numeric")
+            elif field in ['symbol', 'name'] and not isinstance(comp[field], str):
+                invalid_fields.append(f"{field}=non-string")
+
         if missing_fields:
-            errors.append(f"Component {i+1}: Missing required fields: {missing_fields}")
+            errors.append(f"Component {i+1}: Missing fields: {missing_fields}")
+        if invalid_fields:
+            errors.append(f"Component {i+1}: Invalid fields: {invalid_fields}")
 
     if errors:
         return False, f"Validation failed: {'; '.join(errors)}"
 
-    # Extract data for validation
-    symbols = [comp['symbol'] for comp in components]
-    ranks = [comp.get('rank', 0) for comp in components]
-    weights = [comp.get('weight', 0) for comp in components if 'weight' in comp]
+    # Enhanced data extraction with null safety
+    symbols = []
+    ranks = []
+    weights = []
+
+    for comp in components:
+        # Safe symbol extraction
+        symbol = comp.get('symbol')
+        if symbol and isinstance(symbol, str) and symbol.strip():
+            symbols.append(symbol.strip().upper())
+
+        # Safe rank extraction
+        rank = comp.get('rank')
+        if rank is not None and isinstance(rank, (int, float)) and not pd.isna(rank):
+            ranks.append(int(rank))
+        else:
+            ranks.append(0)  # Default for missing ranks
+
+        # Safe weight extraction
+        weight = comp.get('weight')
+        if weight is not None and isinstance(weight, (int, float)) and not pd.isna(weight) and weight > 0:
+            weights.append(float(weight))
+
+    print(f"📊 Extracted: {len(symbols)} symbols, {len(ranks)} ranks, {len(weights)} weights")
 
     # Check for duplicates
     duplicate_symbols = set([x for x in symbols if symbols.count(x) > 1])
@@ -326,15 +388,35 @@ def validate_qqq_data(components):
     if extra_ranks:
         warnings.append(f"Unexpected ranks found: {sorted(extra_ranks)}")
 
-    # Weight validation
+    # Enhanced weight validation with null safety
     if weights:
-        weight_sum = sum(weights)
-        if weight_sum < 80 or weight_sum > 120:
-            warnings.append(f"Total weight ({weight_sum:.2f}%) outside expected range (80-120%)")
+        try:
+            # Filter out any remaining invalid weights
+            valid_weights = [w for w in weights if isinstance(w, (int, float)) and not pd.isna(w) and w > 0]
 
-        max_weight = max(weights)
-        if max_weight > 15:  # QQQ top holdings typically under 15%
-            warnings.append(f"Unusually high individual weight: {max_weight:.2f}%")
+            if valid_weights:
+                weight_sum = sum(valid_weights)
+                if weight_sum < 80 or weight_sum > 120:
+                    warnings.append(f"Total weight ({weight_sum:.2f}%) outside expected range (80-120%)")
+
+                max_weight = max(valid_weights)
+                min_weight = min(valid_weights)
+                if max_weight > 15:  # QQQ top holdings typically under 15%
+                    warnings.append(f"Unusually high individual weight: {max_weight:.2f}%")
+                if min_weight <= 0:
+                    warnings.append(f"Found zero or negative weights (min: {min_weight:.4f}%)")
+
+                # Check for reasonable distribution
+                if len(valid_weights) > 10:
+                    avg_weight = weight_sum / len(valid_weights)
+                    if avg_weight > 5:  # QQQ should have many small positions
+                        warnings.append(f"Average weight ({avg_weight:.2f}%) unusually high for QQQ")
+            else:
+                warnings.append("No valid weight data found after filtering")
+        except Exception as e:
+            warnings.append(f"Error validating weights: {e}")
+    else:
+        warnings.append("No weight data available for validation")
 
     # Expected QQQ characteristics
     if len(components) < 90:
@@ -372,18 +454,37 @@ def validate_qqq_data(components):
 
 def clean_and_standardize_symbol(symbol):
     """
-    Clean and standardize stock symbols.
+    Enhanced symbol cleaning with comprehensive null safety.
     """
-    if not symbol:
+    if symbol is None:
         return ""
 
-    symbol = str(symbol).strip().upper()
+    if not isinstance(symbol, str):
+        try:
+            symbol = str(symbol)
+        except (ValueError, TypeError):
+            print(f"⚠️  Warning: Could not convert symbol to string: {symbol} (type: {type(symbol)})")
+            return ""
 
-    # Remove common prefixes/suffixes that might cause issues
-    symbol = re.sub(r'\s+', '', symbol)  # Remove whitespace
-    symbol = re.sub(r'[^A-Z0-9.-]', '', symbol)  # Keep only valid ticker characters
+    if not symbol or not symbol.strip():
+        return ""
 
-    return symbol
+    try:
+        # Clean and standardize
+        symbol = symbol.strip().upper()
+
+        # Remove problematic characters but preserve valid ticker formats
+        symbol = re.sub(r'\s+', '', symbol)  # Remove internal whitespace
+        symbol = re.sub(r'[^A-Z0-9.-]', '', symbol)  # Keep only valid ticker characters
+
+        # Additional validation
+        if len(symbol) > 10 or len(symbol) < 1:
+            print(f"⚠️  Warning: Unusual symbol length: '{symbol}' ({len(symbol)} chars)")
+
+        return symbol
+    except Exception as e:
+        print(f"❌ Error cleaning symbol '{symbol}': {e}")
+        return ""
 
 # S&P 500 functionality removed - focusing on QQQ only
 
@@ -405,9 +506,15 @@ def download_qqq_holdings():
     print(f"   Target: ~100 Nasdaq-100 components with weights")
     
     try:
-        # Download the Excel file
-        response = requests.get(url)
+        # Enhanced download with better error handling
+        print(f"   Making request to Invesco QQQ data endpoint...")
+        response = requests.get(url, timeout=30, headers={'User-Agent': 'QQQ-Monitor/1.0'})
         response.raise_for_status()
+
+        if not response.content:
+            raise ValueError("Received empty response from Invesco")
+
+        print(f"   ✓ Downloaded {len(response.content)} bytes from Invesco")
         
         # Save the raw file for inspection
         today = datetime.datetime.now().strftime("%Y%m%d")
@@ -426,26 +533,48 @@ def download_qqq_holdings():
         except:
             print("Could not save raw content as CSV")
         
-        # Try different parsing approaches
+        # Smart content detection and parsing strategy
         result = None
         parse_method = ""
-        
-        # Additional approach: Try parsing as CSV
-        try:
-            print("Trying to parse QQQ holdings as CSV")
-            # Try different encodings and delimiters
-            for encoding in ['utf-8', 'latin1', 'cp1252']:
-                for delimiter in [',', '\t', ';']:
+
+        # Step 1: Detect content format
+        content_preview = response.content[:1000].decode('utf-8', errors='ignore')
+        is_csv_format = ',' in content_preview and ('Fund Ticker' in content_preview or 'Holding Ticker' in content_preview)
+        is_excel_format = response.headers.get('content-type', '').startswith('application/vnd.openxmlformats')
+
+        print(f"📋 Content analysis:")
+        print(f"   Content-Type header: {response.headers.get('content-type', 'not specified')}")
+        print(f"   Appears to be CSV: {is_csv_format}")
+        print(f"   Appears to be Excel: {is_excel_format}")
+        print(f"   Content preview: {content_preview[:200]}...")
+
+        # Step 2: Try CSV parsing first (since Invesco QQQ data is actually CSV)
+        if is_csv_format or not is_excel_format:
+            try:
+                print("🔄 Attempting CSV parsing (primary strategy)")
+                # Optimize parsing by trying most likely scenarios first
+                parsing_configs = [
+                    ('utf-8', ',', 'Standard UTF-8 CSV'),
+                    ('utf-8', '\t', 'UTF-8 Tab-separated'),
+                    ('latin1', ',', 'Latin-1 CSV'),
+                    ('cp1252', ',', 'Windows CSV')
+                ]
+
+                for encoding, delimiter, desc in parsing_configs:
                     try:
-                        df = pd.read_csv(io.BytesIO(response.content), 
-                                         encoding=encoding, 
+                        print(f"     Trying {desc} ({encoding}, '{delimiter}')")
+                        df = pd.read_csv(io.BytesIO(response.content),
+                                         encoding=encoding,
                                          delimiter=delimiter,
-                                         error_bad_lines=False)
-                        
-                        # Check if we got sensible data
-                        if len(df.columns) > 2:
-                            print(f"Successfully parsed QQQ as CSV with encoding={encoding}, delimiter={delimiter}")
-                            print(f"Columns: {df.columns.tolist()}")
+                                         on_bad_lines='skip')
+
+                        # Enhanced validation - check if we got meaningful QQQ data
+                        if (len(df.columns) > 5 and len(df) > 50 and
+                            any('ticker' in str(col).lower() for col in df.columns)):
+                            print(f"✓ Successfully parsed QQQ data with {desc}")
+                            print(f"   Found {len(df)} rows and {len(df.columns)} columns")
+                            print(f"   Key columns: {df.columns.tolist()}")
+                            # This success case is now handled above
                             
                             # Look for key columns
                             ticker_col = None
@@ -467,21 +596,29 @@ def download_qqq_holdings():
                                 # Basic cleanup
                                 df = df.dropna(subset=[ticker_col])
                                 
-                                # Collect weight values for analysis
+                                # Collect weight values for analysis with safe conversion
                                 weight_vals = []
                                 component_names = []
                                 if weight_col:
-                                    weight_vals = df[weight_col].dropna().astype(float).tolist()
-                                    component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
-                                                       for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                                    # Safe numeric conversion for weights
+                                    weight_series = df[weight_col].dropna()
+                                    weight_vals = pd.to_numeric(weight_series, errors='coerce').dropna().tolist()
+
+                                    # Get component names for valid weights only
+                                    valid_weight_mask = pd.to_numeric(df[weight_col], errors='coerce').notna()
+                                    valid_df = df[valid_weight_mask & df[ticker_col].notna()]
+                                    component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col and pd.notna(row[name_col]) else str(row[ticker_col])
+                                                       for _, row in valid_df.iterrows()]
                                 
                                 # Normalize weights if there are any
                                 normalized_weights = {}
                                 if weight_vals:
                                     normalized = normalize_weights(weight_vals, component_names)
                                     # Create a dictionary mapping row index to normalized weight
-                                    weight_indices = df.dropna(subset=[weight_col]).index
-                                    normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                                    # Use the same valid weight mask to ensure consistency
+                                    valid_weight_mask = pd.to_numeric(df[weight_col], errors='coerce').notna()
+                                    weight_indices = df[valid_weight_mask].index
+                                    normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices) if i < len(normalized)}
                                 
                                 # Format data into standardized structure
                                 result = []
@@ -501,30 +638,39 @@ def download_qqq_holdings():
                                         else:
                                             item["name"] = f"{symbol} Inc."
                                         
-                                        # Add weight if available - use normalized value
-                                        if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
-                                            item["weight"] = normalized_weights[i]
+                                        # Add weight if available - use normalized value with safety checks
+                                        if weight_col and pd.notna(row.get(weight_col)) and i in normalized_weights:
+                                            weight_value = normalized_weights[i]
+                                            if isinstance(weight_value, (int, float)) and not (pd.isna(weight_value) or np.isinf(weight_value)):
+                                                item["weight"] = weight_value
+                                            else:
+                                                print(f"   ⚠️  Skipping invalid weight for {symbol}: {weight_value}")
                                         
                                         result.append(item)
                                     except Exception as e:
                                         print(f"Error processing row {i} with CSV approach: {e}")
                                         continue
                                 
-                                print(f"Processed {len(result)} QQQ holdings with CSV approach")
+                                print(f"✓ Processed {len(result)} QQQ holdings successfully with {desc}")
                                 parse_method = f"csv-{encoding}-{delimiter}"
+                                # Early exit - we found working data, no need to try other configs
+                                print(f"✅ CSV parsing successful, skipping remaining attempts")
                                 break
                     except Exception as e:
-                        print(f"Error with CSV parsing (encoding={encoding}, delimiter={delimiter}): {e}")
-                
-                # Break outer loop if we found a working approach
-                if result:
-                    break
-        except Exception as e:
-            print(f"Error with CSV parsing approach: {e}")
-        
-        # Approach 1: Standard parsing with skiprows=1 (typical format)
+                        print(f"   ❌ {desc} failed: {str(e)[:100]}...")
+
+                    # Break outer loop if we found a working approach
+                    if result:
+                        print(f"🎉 Successfully parsed QQQ data using CSV strategy")
+                        break
+            except Exception as e:
+                print(f"⚠️  CSV parsing approach failed: {e}")
+
+        # Step 3: Fallback to Excel parsing if CSV failed
         if not result:
+            print("🔄 Falling back to Excel parsing strategies")
             try:
+                print("   Attempting standard Excel parsing (skiprows=1)")
                 df = pd.read_excel(io.BytesIO(response.content), skiprows=1)
                 
                 # Check for expected columns
@@ -539,23 +685,31 @@ def download_qqq_holdings():
                     
                     # Basic cleanup
                     df = df.dropna(subset=[ticker_col])
-                    
-                    # Collect weight values for analysis
+
+                    # Collect weight values for analysis with safe conversion
                     weight_vals = []
                     component_names = []
                     if weight_col:
-                        weight_vals = df[weight_col].dropna().astype(float).tolist()
-                        component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
-                                           for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                        # Safe numeric conversion for weights
+                        weight_series = df[weight_col].dropna()
+                        weight_vals = pd.to_numeric(weight_series, errors='coerce').dropna().tolist()
+
+                        # Get component names for valid weights only
+                        valid_weight_mask = pd.to_numeric(df[weight_col], errors='coerce').notna()
+                        valid_df = df[valid_weight_mask & df[ticker_col].notna()]
+                        component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col and pd.notna(row[name_col]) else str(row[ticker_col])
+                                           for _, row in valid_df.iterrows()]
                     
                     # Normalize weights if there are any
                     normalized_weights = {}
                     if weight_vals:
                         normalized = normalize_weights(weight_vals, component_names)
                         # Create a dictionary mapping row index to normalized weight
-                        weight_indices = df.dropna(subset=[weight_col]).index
-                        normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
-                    
+                        # Use the same valid weight mask to ensure consistency
+                        valid_weight_mask = pd.to_numeric(df[weight_col], errors='coerce').notna()
+                        weight_indices = df[valid_weight_mask].index
+                        normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices) if i < len(normalized)}
+
                     # Format data into standardized structure
                     result = []
                     for i, row in df.iterrows():
@@ -576,10 +730,14 @@ def download_qqq_holdings():
                             else:
                                 item["name"] = f"{symbol} Inc."
                             
-                            # Add weight if available - use normalized value
-                            if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
-                                item["weight"] = normalized_weights[i]
-                            
+                            # Add weight if available - use normalized value with safety checks
+                            if weight_col and pd.notna(row.get(weight_col)) and i in normalized_weights:
+                                weight_value = normalized_weights[i]
+                                if isinstance(weight_value, (int, float)) and not (pd.isna(weight_value) or np.isinf(weight_value)):
+                                    item["weight"] = weight_value
+                                else:
+                                    print(f"   ⚠️  Skipping invalid weight for {symbol}: {weight_value}")
+
                             result.append(item)
                         except Exception as e:
                             print(f"Error processing QQQ row {i}: {e}")
@@ -588,16 +746,17 @@ def download_qqq_holdings():
                     print(f"Processed {len(result)} QQQ holdings with standard approach")
                     parse_method = "standard"
                 else:
-                    print("Standard parsing approach failed - missing expected columns")
-                    print(f"Found columns: {df.columns.tolist()}")
+                    print("   ⚠️  Standard Excel parsing failed - missing expected columns")
+                    print(f"   Found columns: {df.columns.tolist()}")
             except Exception as e:
-                print(f"Error with standard parsing approach: {e}")
-        
-        # Approach 2: Try different skiprows values if standard approach failed
+                print(f"   ❌ Standard Excel parsing failed: {e}")
+
+        # Step 4: Try alternative Excel parsing with different skiprows
         if not result:
+            print("   Attempting alternative Excel parsing strategies")
             for skiprows in [0, 2, 3, 4]:
                 try:
-                    print(f"Trying alternative parsing with skiprows={skiprows}")
+                    print(f"   Trying skiprows={skiprows}")
                     df = pd.read_excel(io.BytesIO(response.content), skiprows=skiprows)
                     
                     # Look for key columns
@@ -619,21 +778,29 @@ def download_qqq_holdings():
                         # Basic cleanup
                         df = df.dropna(subset=[ticker_col])
                         
-                        # Collect weight values for analysis
+                        # Collect weight values for analysis with safe conversion
                         weight_vals = []
                         component_names = []
                         if weight_col:
-                            weight_vals = df[weight_col].dropna().astype(float).tolist()
-                            component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
-                                               for _, row in df.dropna(subset=[weight_col]).iterrows()]
+                            # Safe numeric conversion for weights
+                            weight_series = df[weight_col].dropna()
+                            weight_vals = pd.to_numeric(weight_series, errors='coerce').dropna().tolist()
+
+                            # Get component names for valid weights only
+                            valid_weight_mask = pd.to_numeric(df[weight_col], errors='coerce').notna()
+                            valid_df = df[valid_weight_mask & df[ticker_col].notna()]
+                            component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col and pd.notna(row[name_col]) else str(row[ticker_col])
+                                               for _, row in valid_df.iterrows()]
                         
                         # Normalize weights if there are any
                         normalized_weights = {}
                         if weight_vals:
                             normalized = normalize_weights(weight_vals, component_names)
                             # Create a dictionary mapping row index to normalized weight
-                            weight_indices = df.dropna(subset=[weight_col]).index
-                            normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                            # Use the same valid weight mask to ensure consistency
+                            valid_weight_mask = pd.to_numeric(df[weight_col], errors='coerce').notna()
+                            weight_indices = df[valid_weight_mask].index
+                            normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices) if i < len(normalized)}
                         
                         result = []
                         for i, row in df.iterrows():
@@ -665,12 +832,12 @@ def download_qqq_holdings():
                         parse_method = f"alternative-{skiprows}"
                         break
                 except Exception as e:
-                    print(f"Alternative parsing approach (skiprows={skiprows}) failed: {e}")
-        
-        # Approach 3: Try using openpyxl engine if other approaches failed
+                    print(f"   ❌ skiprows={skiprows} failed: {e}")
+
+        # Step 5: Try openpyxl engine as final Excel fallback
         if not result:
             try:
-                print("Trying parsing with openpyxl engine")
+                print("   Attempting openpyxl engine parsing")
                 df = pd.read_excel(io.BytesIO(response.content), engine='openpyxl')
                 
                 # Similar column detection and processing...
@@ -693,21 +860,29 @@ def download_qqq_holdings():
                     # Process data similar to above approaches
                     df = df.dropna(subset=[ticker_col])
                     
-                    # Collect weight values for analysis
+                    # Collect weight values for analysis with safe conversion
                     weight_vals = []
                     component_names = []
                     if weight_col:
-                        weight_vals = df[weight_col].dropna().astype(float).tolist()
-                        component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col else row[ticker_col] 
-                                           for _, row in df.dropna(subset=[weight_col]).iterrows()]
-                    
+                        # Safe numeric conversion for weights
+                        weight_series = df[weight_col].dropna()
+                        weight_vals = pd.to_numeric(weight_series, errors='coerce').dropna().tolist()
+
+                        # Get component names for valid weights only
+                        valid_weight_mask = pd.to_numeric(df[weight_col], errors='coerce').notna()
+                        valid_df = df[valid_weight_mask & df[ticker_col].notna()]
+                        component_names = [f"{row[ticker_col]}: {row[name_col]}" if name_col and pd.notna(row[name_col]) else str(row[ticker_col])
+                                           for _, row in valid_df.iterrows()]
+
                     # Normalize weights if there are any
                     normalized_weights = {}
                     if weight_vals:
                         normalized = normalize_weights(weight_vals, component_names)
                         # Create a dictionary mapping row index to normalized weight
-                        weight_indices = df.dropna(subset=[weight_col]).index
-                        normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices)}
+                        # Use the same valid weight mask to ensure consistency
+                        valid_weight_mask = pd.to_numeric(df[weight_col], errors='coerce').notna()
+                        weight_indices = df[valid_weight_mask].index
+                        normalized_weights = {idx: normalized[i] for i, idx in enumerate(weight_indices) if i < len(normalized)}
                     
                     result = []
                     for i, row in df.iterrows():
@@ -726,10 +901,14 @@ def download_qqq_holdings():
                             else:
                                 item["name"] = f"{symbol} Inc."
                             
-                            # Add weight if available - use normalized value
-                            if weight_col and pd.notna(row[weight_col]) and i in normalized_weights:
-                                item["weight"] = normalized_weights[i]
-                            
+                            # Add weight if available - use normalized value with safety checks
+                            if weight_col and pd.notna(row.get(weight_col)) and i in normalized_weights:
+                                weight_value = normalized_weights[i]
+                                if isinstance(weight_value, (int, float)) and not (pd.isna(weight_value) or np.isinf(weight_value)):
+                                    item["weight"] = weight_value
+                                else:
+                                    print(f"   ⚠️  Skipping invalid weight for {symbol}: {weight_value}")
+
                             result.append(item)
                         except Exception as e:
                             print(f"Error processing row {i} with openpyxl engine: {e}")
@@ -738,7 +917,7 @@ def download_qqq_holdings():
                     print(f"Processed {len(result)} QQQ holdings with openpyxl engine")
                     parse_method = "openpyxl"
             except Exception as e:
-                print(f"Parsing with openpyxl engine failed: {e}")
+                print(f"   ❌ openpyxl engine failed: {e}")
         
         # Enhanced result processing and validation
         if result and len(result) > 0:
@@ -798,18 +977,29 @@ def download_qqq_holdings():
             print("❌ All parsing attempts failed for QQQ holdings")
             print("   Examining common failure modes...")
 
-            # Try to provide helpful debugging info
+            # Enhanced debugging information
             try:
-                content_snippet = response.content[:500] if response else b"No response"
-                print(f"   Response content preview: {content_snippet}")
+                if response:
+                    print(f"   Response status: {response.status_code}")
+                    print(f"   Response headers: {dict(response.headers)}")
 
-                # Check if it looks like HTML (redirect page)
-                if b"<html" in content_snippet.lower() or b"<!doctype" in content_snippet.lower():
-                    print("   ⚠️  Response appears to be HTML, possible redirect or error page")
-                elif b"excel" not in content_snippet.lower() and b"spreadsheet" not in content_snippet.lower():
-                    print("   ⚠️  Response doesn't appear to be Excel format")
-            except:
-                pass
+                    content_snippet = response.content[:500] if response.content else b"No content"
+                    print(f"   Response content preview: {content_snippet}")
+
+                    # Enhanced content analysis
+                    content_str = content_snippet.decode('utf-8', errors='ignore').lower()
+                    if "<html" in content_str or "<!doctype" in content_str:
+                        print("   ⚠️  Response appears to be HTML - possible redirect or error page")
+                    elif "access denied" in content_str or "forbidden" in content_str:
+                        print("   ⚠️  Response indicates access denied - possible IP blocking")
+                    elif "rate limit" in content_str or "too many requests" in content_str:
+                        print("   ⚠️  Response indicates rate limiting")
+                    elif not any(indicator in content_str for indicator in ["fund", "ticker", "weight", "holding"]):
+                        print("   ⚠️  Response doesn't contain expected financial data indicators")
+                else:
+                    print("   ❌ No response object available")
+            except Exception as debug_e:
+                print(f"   ❌ Error analyzing response: {debug_e}")
 
             print("   Falling back to hardcoded QQQ data...")
             return get_qqq_components_hardcoded()
@@ -1036,13 +1226,17 @@ def detect_changes(previous_data, current_data):
         prev_rank = prev_by_symbol[symbol]["rank"]
         curr_rank = curr_by_symbol[symbol]["rank"]
         
-        # Get weights if they exist
-        prev_weight = prev_by_symbol[symbol].get("weight", 0)
-        curr_weight = curr_by_symbol[symbol].get("weight", 0)
-        
-        # Check for significant weight changes (more than 0.1 percentage point)
-        # Only if both previous and current data have weight information
-        if 'weight' in prev_by_symbol[symbol] and 'weight' in curr_by_symbol[symbol]:
+        # Enhanced weight comparison with null safety
+        prev_weight_raw = prev_by_symbol[symbol].get("weight")
+        curr_weight_raw = curr_by_symbol[symbol].get("weight")
+
+        # Safe weight change detection
+        if (prev_weight_raw is not None and curr_weight_raw is not None and
+            isinstance(prev_weight_raw, (int, float)) and isinstance(curr_weight_raw, (int, float)) and
+            not pd.isna(prev_weight_raw) and not pd.isna(curr_weight_raw)):
+
+            prev_weight = float(prev_weight_raw)
+            curr_weight = float(curr_weight_raw)
             weight_change = curr_weight - prev_weight
             
             # Add a sanity check for unrealistic weight changes
@@ -1061,12 +1255,19 @@ def detect_changes(previous_data, current_data):
                     if abs(weight_change) > 0.5:  # More significant threshold for top positions
                         changes["top_changes"].append(f"TOP {TOP_POSITIONS_TO_TRACK} SIGNIFICANT WEIGHT CHANGE: {name} ({symbol}) {weight_msg}")
         
-        # Check for market cap changes if available
-        if 'market_cap' in prev_by_symbol[symbol] and 'market_cap' in curr_by_symbol[symbol]:
-            prev_mcap = prev_by_symbol[symbol]["market_cap"]
-            curr_mcap = curr_by_symbol[symbol]["market_cap"]
-            
-            # Calculate percentage change
+        # Enhanced market cap change detection with null safety
+        prev_mcap_raw = prev_by_symbol[symbol].get("market_cap")
+        curr_mcap_raw = curr_by_symbol[symbol].get("market_cap")
+
+        if (prev_mcap_raw is not None and curr_mcap_raw is not None and
+            isinstance(prev_mcap_raw, (int, float)) and isinstance(curr_mcap_raw, (int, float)) and
+            not pd.isna(prev_mcap_raw) and not pd.isna(curr_mcap_raw) and
+            prev_mcap_raw > 0 and curr_mcap_raw > 0):
+
+            prev_mcap = float(prev_mcap_raw)
+            curr_mcap = float(curr_mcap_raw)
+
+            # Calculate percentage change with safety check
             mcap_pct_change = ((curr_mcap - prev_mcap) / prev_mcap) * 100
             
             # Report significant market cap changes (more than 5%)
