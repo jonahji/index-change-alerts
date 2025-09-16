@@ -1,13 +1,13 @@
-name: Daily Index Change Check
+name: Daily QQQ Change Check
 
 on:
   schedule:
-    # Run at 6:00 PM UTC (after market close in the US)
+    # Run at 6:00 PM UTC (after US market close) - weekdays only
     - cron: '0 18 * * 1-5'
-  workflow_dispatch:  # Allow manual triggering for testing
+  workflow_dispatch:  # Allow manual triggering for testing and development
 
 jobs:
-  check-index-changes:
+  check-qqq-changes:
     runs-on: ubuntu-latest
     
     steps:
@@ -23,31 +23,51 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # Verify installations
-          pip list | grep pandas
-          pip list | grep openpyxl
+          # Verify critical package installations for QQQ processing
+          echo "Verifying key packages..."
+          pip list | grep pandas && echo "✓ pandas installed" || echo "✗ pandas missing"
+          pip list | grep openpyxl && echo "✓ openpyxl installed" || echo "✗ openpyxl missing"
+          pip list | grep numpy && echo "✓ numpy installed" || echo "✗ numpy missing"
+          pip list | grep requests && echo "✓ requests installed" || echo "✗ requests missing"
       
-      - name: Run change detection script
+      - name: Run QQQ change detection
         env:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
           EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
           ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
-        run: python scripts/check_changes.py
+        run: |
+          echo "🚀 Starting QQQ (Nasdaq-100) change detection..."
+          echo "Timestamp: $(date -u)"
+          python scripts/check_changes.py
+          echo "✅ QQQ change detection completed"
       
-      - name: Archive raw ETF files
+      - name: Archive QQQ data and analysis
         uses: actions/upload-artifact@v4
+        if: always()  # Upload even if previous steps failed
         with:
-          name: raw-etf-files
-          path: data/raw/
-          retention-days: 7  # Keep for 7 days
+          name: qqq-analysis-${{ github.run_id }}
+          path: |
+            data/raw/
+            data/cache/
+            data/qqq_current.json
+          retention-days: 14  # Keep for 2 weeks for better troubleshooting
       
-      - name: Commit changes
+      - name: Commit QQQ data updates
         run: |
           git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add data/*.json || true
-          git diff --quiet && git diff --staged --quiet || git commit -m "Update index data [skip ci]"
+          git config --local user.name "QQQ Monitor Bot"
+          # Only add QQQ-related data files
+          git add data/qqq_current.json || true
+          git add data/shares_outstanding.json || true
+          # Check if there are changes to commit
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "ℹ️ No QQQ data changes to commit"
+          else
+            echo "📝 Committing QQQ data updates..."
+            git commit -m "Update QQQ data [skip ci] - $(date -u +'%Y-%m-%d %H:%M UTC')"
+            echo "✅ Changes committed successfully"
+          fi
         continue-on-error: true
       
       - name: Push changes
