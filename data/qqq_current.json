@@ -3,14 +3,14 @@
     "symbol": "NVDA",
     "rank": 1,
     "name": "NVIDIA Corporation",
-    "market_cap": 4338392236000.0,
+    "market_cap": 4427502060000.0,
     "real_data": true
   },
   {
     "symbol": "MSFT",
     "rank": 2,
     "name": "Microsoft Corporation",
-    "market_cap": 3801767215000.0,
+    "market_cap": 3825107206000.0,
     "real_data": true
   },
   {
@@ -24,35 +24,35 @@
     "symbol": "AVGO",
     "rank": 4,
     "name": "Broadcom Inc",
-    "market_cap": 1579772674000.0,
+    "market_cap": 1548463374000.0,
     "real_data": true
   },
   {
     "symbol": "AMZN",
     "rank": 5,
     "name": "Amazon.com Inc",
-    "market_cap": 2343934362000.0,
-    "real_data": true
-  },
-  {
-    "symbol": "META",
-    "rank": 6,
-    "name": "Meta Platforms Inc.",
-    "market_cap": 1868405277000.0,
+    "market_cap": 2369423409000.0,
     "real_data": true
   },
   {
     "symbol": "TSLA",
-    "rank": 7,
+    "rank": 6,
     "name": "Tesla Inc",
-    "market_cap": 1464396415000.0,
+    "market_cap": 1473740145000.0,
+    "real_data": true
+  },
+  {
+    "symbol": "META",
+    "rank": 7,
+    "name": "Meta Platforms Inc.",
+    "market_cap": 1868405277000.0,
     "real_data": true
   },
   {
     "symbol": "GOOGL",
     "rank": 8,
     "name": "Alphabet Inc Class A",
-    "market_cap": 2985129673000.0,
+    "market_cap": 2985129935000.0,
     "real_data": true
   },
   {
@@ -66,42 +66,42 @@
     "symbol": "NFLX",
     "rank": 10,
     "name": "Netflix Inc",
-    "market_cap": 514420081000.0,
-    "real_data": true
-  },
-  {
-    "symbol": "COST",
-    "rank": 11,
-    "name": "Costco Wholesale Corp",
-    "market_cap": 405982937000.0,
+    "market_cap": 514420113000.0,
     "real_data": true
   },
   {
     "symbol": "PLTR",
-    "rank": 12,
+    "rank": 11,
     "name": "Palantir Technologies Inc. Class A Common Stock",
-    "market_cap": 421256888000.0,
+    "market_cap": 421256856000.0,
     "real_data": true
   },
   {
-    "symbol": "TMUS",
-    "rank": 13,
-    "name": "T-Mobile US Inc",
-    "market_cap": 267253252000.0,
+    "symbol": "COST",
+    "rank": 12,
+    "name": "Costco Wholesale Corp",
+    "market_cap": 406390702000.0,
     "real_data": true
   },
   {
     "symbol": "CSCO",
-    "rank": 14,
+    "rank": 13,
     "name": "Cisco Systems Inc",
-    "market_cap": 265733915000.0,
+    "market_cap": 267710513000.0,
+    "real_data": true
+  },
+  {
+    "symbol": "TMUS",
+    "rank": 14,
+    "name": "T-Mobile US Inc",
+    "market_cap": 267804721000.0,
     "real_data": true
   },
   {
     "symbol": "AMD",
     "rank": 15,
     "name": "Advanced Micro Devices Inc",
-    "market_cap": 258778661000.0,
+    "market_cap": 261862048000.0,
     "real_data": true
   },
   {
@@ -125,24 +125,24 @@
     "name": "PepsiCo Inc"
   },
   {
-    "symbol": "QCOM",
-    "rank": 20,
-    "name": "QUALCOMM Inc"
-  },
-  {
-    "symbol": "BKNG",
-    "rank": 21,
-    "name": "Booking Holdings Inc"
-  },
-  {
     "symbol": "MU",
-    "rank": 22,
+    "rank": 20,
     "name": "Micron Technology Inc"
   },
   {
     "symbol": "SHOP",
-    "rank": 23,
+    "rank": 21,
     "name": "Shopify Inc"
+  },
+  {
+    "symbol": "QCOM",
+    "rank": 22,
+    "name": "QUALCOMM Inc"
+  },
+  {
+    "symbol": "BKNG",
+    "rank": 23,
+    "name": "Booking Holdings Inc"
   },
   {
     "symbol": "TXN",
@@ -150,14 +150,14 @@
     "name": "Texas Instruments Inc"
   },
   {
-    "symbol": "AMAT",
+    "symbol": "LRCX",
     "rank": 25,
-    "name": "Applied Materials Inc"
+    "name": "Lam Research Corp"
   },
   {
-    "symbol": "LRCX",
+    "symbol": "AMAT",
     "rank": 26,
-    "name": "Lam Research Corp"
+    "name": "Applied Materials Inc"
   },
   {
     "symbol": "ISRG",
@@ -165,14 +165,14 @@
     "name": "Intuitive Surgical Inc"
   },
   {
-    "symbol": "INTC",
+    "symbol": "ADBE",
     "rank": 28,
-    "name": "Intel Corp"
+    "name": "Adobe Inc"
   },
   {
-    "symbol": "ADBE",
+    "symbol": "INTC",
     "rank": 29,
-    "name": "Adobe Inc"
+    "name": "Intel Corp"
   },
   {
     "symbol": "AMGN",
@@ -205,14 +205,14 @@
     "name": "MercadoLibre Inc"
   },
   {
-    "symbol": "ADI",
+    "symbol": "CRWD",
     "rank": 36,
-    "name": "Analog Devices Inc"
+    "name": "Crowdstrike Holdings Inc"
   },
   {
-    "symbol": "CRWD",
+    "symbol": "ADI",
     "rank": 37,
-    "name": "Crowdstrike Holdings Inc"
+    "name": "Analog Devices Inc"
   },
   {
     "symbol": "ADP",
@@ -240,24 +240,24 @@
     "name": "Vertex Pharmaceuticals Inc"
   },
   {
-    "symbol": "CDNS",
-    "rank": 43,
-    "name": "Cadence Design Systems Inc"
-  },
-  {
     "symbol": "SBUX",
-    "rank": 44,
+    "rank": 43,
     "name": "Starbucks Corp"
   },
   {
-    "symbol": "SNPS",
-    "rank": 45,
-    "name": "Synopsys Inc"
+    "symbol": "CDNS",
+    "rank": 44,
+    "name": "Cadence Design Systems Inc"
   },
   {
     "symbol": "ORLY",
-    "rank": 46,
+    "rank": 45,
     "name": "O'Reilly Automotive Inc"
+  },
+  {
+    "symbol": "SNPS",
+    "rank": 46,
+    "name": "Synopsys Inc"
   },
   {
     "symbol": "PDD",
@@ -265,24 +265,24 @@
     "name": "PDD Holdings Inc ADR"
   },
   {
-    "symbol": "CTAS",
-    "rank": 48,
-    "name": "Cintas Corp"
-  },
-  {
-    "symbol": "MDLZ",
-    "rank": 49,
-    "name": "Mondelez International Inc"
-  },
-  {
     "symbol": "MSTR",
-    "rank": 50,
+    "rank": 48,
     "name": "Strategy Inc"
   },
   {
+    "symbol": "CTAS",
+    "rank": 49,
+    "name": "Cintas Corp"
+  },
+  {
     "symbol": "ASML",
-    "rank": 51,
+    "rank": 50,
     "name": "ASML Holding NV"
+  },
+  {
+    "symbol": "MDLZ",
+    "rank": 51,
+    "name": "Mondelez International Inc"
   },
   {
     "symbol": "MAR",
@@ -305,9 +305,9 @@
     "name": "Autodesk Inc"
   },
   {
-    "symbol": "FTNT",
+    "symbol": "CSX",
     "rank": 56,
-    "name": "Fortinet Inc"
+    "name": "CSX Corp"
   },
   {
     "symbol": "PYPL",
@@ -320,19 +320,19 @@
     "name": "Monster Beverage Corp"
   },
   {
-    "symbol": "CSX",
+    "symbol": "FTNT",
     "rank": 59,
-    "name": "CSX Corp"
-  },
-  {
-    "symbol": "REGN",
-    "rank": 60,
-    "name": "Regeneron Pharmaceuticals Inc"
+    "name": "Fortinet Inc"
   },
   {
     "symbol": "AEP",
-    "rank": 61,
+    "rank": 60,
     "name": "American Electric Power Co Inc"
+  },
+  {
+    "symbol": "REGN",
+    "rank": 61,
+    "name": "Regeneron Pharmaceuticals Inc"
   },
   {
     "symbol": "NXPI",
@@ -340,14 +340,14 @@
     "name": "NXP Semiconductors NV"
   },
   {
-    "symbol": "FAST",
+    "symbol": "AXON",
     "rank": 63,
-    "name": "Fastenal Co"
+    "name": "Axon Enterprise Inc"
   },
   {
-    "symbol": "AXON",
+    "symbol": "FAST",
     "rank": 64,
-    "name": "Axon Enterprise Inc"
+    "name": "Fastenal Co"
   },
   {
     "symbol": "ROP",
@@ -370,44 +370,44 @@
     "name": "PACCAR Inc"
   },
   {
-    "symbol": "IDXX",
+    "symbol": "EA",
     "rank": 69,
+    "name": "Electronic Arts Inc"
+  },
+  {
+    "symbol": "IDXX",
+    "rank": 70,
     "name": "IDEXX Laboratories Inc"
   },
   {
     "symbol": "BKR",
-    "rank": 70,
+    "rank": 71,
     "name": "Baker Hughes Co"
   },
   {
     "symbol": "ROST",
-    "rank": 71,
+    "rank": 72,
     "name": "Ross Stores Inc"
   },
   {
-    "symbol": "EA",
-    "rank": 72,
-    "name": "Electronic Arts Inc"
-  },
-  {
-    "symbol": "WBD",
-    "rank": 73,
-    "name": "Warner Bros Discovery Inc"
-  },
-  {
     "symbol": "TTWO",
-    "rank": 74,
+    "rank": 73,
     "name": "Take-Two Interactive Software Inc"
   },
   {
     "symbol": "XEL",
-    "rank": 75,
+    "rank": 74,
     "name": "Xcel Energy Inc"
   },
   {
-    "symbol": "PAYX",
+    "symbol": "DDOG",
+    "rank": 75,
+    "name": "Datadog Inc"
+  },
+  {
+    "symbol": "WBD",
     "rank": 76,
-    "name": "Paychex Inc"
+    "name": "Warner Bros Discovery Inc"
   },
   {
     "symbol": "ZS",
@@ -415,9 +415,9 @@
     "name": "Zscaler Inc"
   },
   {
-    "symbol": "DDOG",
+    "symbol": "PAYX",
     "rank": 78,
-    "name": "Datadog Inc"
+    "name": "Paychex Inc"
   },
   {
     "symbol": "EXC",
@@ -425,14 +425,14 @@
     "name": "Exelon Corp"
   },
   {
-    "symbol": "CPRT",
+    "symbol": "AZN",
     "rank": 80,
-    "name": "Copart Inc"
+    "name": "AstraZeneca PLC ADR"
   },
   {
-    "symbol": "AZN",
+    "symbol": "CPRT",
     "rank": 81,
-    "name": "AstraZeneca PLC ADR"
+    "name": "Copart Inc"
   },
   {
     "symbol": "FANG",
@@ -455,19 +455,19 @@
     "name": "CoStar Group Inc"
   },
   {
-    "symbol": "MCHP",
-    "rank": 86,
-    "name": "Microchip Technology Inc"
-  },
-  {
     "symbol": "KDP",
-    "rank": 87,
+    "rank": 86,
     "name": "Keurig Dr Pepper Inc"
   },
   {
     "symbol": "VRSK",
-    "rank": 88,
+    "rank": 87,
     "name": "Verisk Analytics Inc"
+  },
+  {
+    "symbol": "MCHP",
+    "rank": 88,
+    "name": "Microchip Technology Inc"
   },
   {
     "symbol": "GEHC",
@@ -500,19 +500,19 @@
     "name": "Dexcom Inc"
   },
   {
-    "symbol": "CDW",
-    "rank": 95,
-    "name": "CDW Corp/DE"
-  },
-  {
     "symbol": "TTD",
-    "rank": 96,
+    "rank": 95,
     "name": "Trade Desk Inc/The"
   },
   {
-    "symbol": "ON",
+    "symbol": "CDW",
+    "rank": 96,
+    "name": "CDW Corp/DE"
+  },
+  {
+    "symbol": "GFS",
     "rank": 97,
-    "name": "ON Semiconductor Corp"
+    "name": "GLOBALFOUNDRIES Inc"
   },
   {
     "symbol": "LULU",
@@ -520,14 +520,14 @@
     "name": "Lululemon Athletica Inc"
   },
   {
-    "symbol": "BIIB",
+    "symbol": "ON",
     "rank": 99,
-    "name": "Biogen Inc"
+    "name": "ON Semiconductor Corp"
   },
   {
-    "symbol": "GFS",
+    "symbol": "BIIB",
     "rank": 100,
-    "name": "GLOBALFOUNDRIES Inc"
+    "name": "Biogen Inc"
   },
   {
     "symbol": "ARM",
