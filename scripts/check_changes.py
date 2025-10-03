@@ -1299,8 +1299,123 @@ def detect_changes(previous_data, current_data):
     
     return changes
 
-def send_email_alert(index_name, changes):
-    """Enhanced email alert with improved formatting and categorization."""
+def format_top_holdings(current_data, top_n=10):
+    """
+    Format top N holdings into an HTML table for email display.
+
+    Args:
+        current_data: List of component dictionaries with rank, symbol, name, weight, market_cap
+        top_n: Number of top holdings to display (default: 10)
+
+    Returns:
+        HTML string with formatted leaderboard table
+    """
+    if not current_data or not isinstance(current_data, list):
+        return '<p style="color: #6c757d; font-style: italic;">⚠️ Top holdings data unavailable</p>'
+
+    try:
+        # Sort by rank and get top N
+        sorted_data = sorted(current_data, key=lambda x: x.get('rank', 999))
+        top_holdings = sorted_data[:top_n]
+
+        if not top_holdings:
+            return '<p style="color: #6c757d; font-style: italic;">⚠️ No holdings data to display</p>'
+
+        # Trophy emojis for top 3
+        rank_badges = {1: '🥇', 2: '🥈', 3: '🥉'}
+
+        # Build HTML table rows
+        rows_html = []
+        for holding in top_holdings:
+            rank = holding.get('rank', 0)
+            symbol = holding.get('symbol', 'N/A')
+            name = holding.get('name', 'Unknown')
+            weight = holding.get('weight')
+            market_cap = holding.get('market_cap')
+
+            # Format rank with badge
+            rank_display = f"{rank_badges.get(rank, '')} {rank}" if rank else 'N/A'
+
+            # Format weight with visual bar
+            if weight and isinstance(weight, (int, float)) and not pd.isna(weight):
+                weight_pct = float(weight)
+                weight_display = f"{weight_pct:.2f}%"
+
+                # Calculate bar width (max 100px for 15% weight)
+                bar_width = min(int((weight_pct / 15) * 100), 100)
+
+                # Color code based on weight
+                if weight_pct >= 5:
+                    bar_color = '#28a745'  # Green for large holdings
+                elif weight_pct >= 2:
+                    bar_color = '#007bff'  # Blue for medium holdings
+                else:
+                    bar_color = '#6c757d'  # Gray for small holdings
+
+                weight_bar = f'<div class="weight-bar-container"><div class="weight-bar" style="width: {bar_width}px; background: {bar_color};"></div></div>'
+            else:
+                weight_display = 'N/A'
+                weight_bar = ''
+
+            # Format market cap
+            if market_cap and isinstance(market_cap, (int, float)) and not pd.isna(market_cap) and market_cap > 0:
+                mcap_billions = float(market_cap) / 1e9
+                if mcap_billions >= 1000:
+                    mcap_display = f"${mcap_billions/1000:.2f}T"
+                else:
+                    mcap_display = f"${mcap_billions:.1f}B"
+            else:
+                mcap_display = '<span style="color: #adb5bd;">—</span>'
+
+            # Truncate long company names
+            if len(name) > 30:
+                name = name[:27] + '...'
+
+            # Build row HTML
+            row_html = f"""
+                <tr>
+                    <td class="rank-cell">{rank_display}</td>
+                    <td class="symbol-cell">{symbol}</td>
+                    <td class="name-cell">{name}</td>
+                    <td class="weight-cell">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="min-width: 50px; text-align: right; font-weight: 600;">{weight_display}</span>
+                            {weight_bar}
+                        </div>
+                    </td>
+                    <td class="mcap-cell">{mcap_display}</td>
+                </tr>
+            """
+            rows_html.append(row_html)
+
+        # Combine into table
+        table_html = f"""
+        <table class="holdings-table">
+            <thead>
+                <tr>
+                    <th style="text-align: center;">Rank</th>
+                    <th>Symbol</th>
+                    <th>Company</th>
+                    <th>Weight</th>
+                    <th>Market Cap</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(rows_html)}
+            </tbody>
+        </table>
+        """
+
+        return table_html
+
+    except Exception as e:
+        print(f"❌ Error formatting top holdings: {e}")
+        import traceback
+        traceback.print_exc()
+        return f'<p style="color: #dc3545;">⚠️ Error displaying holdings: {str(e)}</p>'
+
+def send_email_alert(index_name, changes, current_data=None):
+    """Enhanced email alert with top holdings leaderboard and improved categorization."""
     if not changes or not changes["message"] or changes["message"][0] == "Initial data collection - no changes to report.":
         print(f"📫 No changes to report for {index_name}")
         return
@@ -1324,6 +1439,9 @@ def send_email_alert(index_name, changes):
     print(f"   Recipient: {EMAIL_RECIPIENT}")
     print(f"   Total changes: {len(changes['message'])}")
     print(f"   Top position changes: {len(changes['top_changes'])}")
+    print(f"   Including top holdings leaderboard: {bool(current_data)}")
+    if current_data:
+        print(f"   Current data available: {len(current_data)} components")
 
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     time_now = datetime.datetime.now().strftime("%H:%M UTC")
@@ -1424,6 +1542,79 @@ def send_email_alert(index_name, changes):
                 font-size: 12px;
                 color: #6c757d;
             }}
+            /* Top Holdings Table Styles */
+            .holdings-table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin: 15px 0;
+                background: white;
+                border-radius: 8px;
+                overflow: hidden;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }}
+            .holdings-table thead {{
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                color: white;
+            }}
+            .holdings-table th {{
+                padding: 12px;
+                text-align: left;
+                font-weight: 600;
+                font-size: 13px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }}
+            .holdings-table tbody tr {{
+                border-bottom: 1px solid #e9ecef;
+                transition: background-color 0.2s;
+            }}
+            .holdings-table tbody tr:hover {{
+                background-color: #f8f9fa;
+            }}
+            .holdings-table tbody tr:nth-child(even) {{
+                background-color: #fafbfc;
+            }}
+            .holdings-table td {{
+                padding: 12px;
+                font-size: 14px;
+            }}
+            .rank-cell {{
+                font-weight: bold;
+                font-size: 16px;
+                text-align: center;
+                width: 80px;
+            }}
+            .symbol-cell {{
+                font-weight: bold;
+                color: #007bff;
+                font-family: 'Courier New', monospace;
+                width: 80px;
+            }}
+            .name-cell {{
+                color: #495057;
+                width: 250px;
+            }}
+            .weight-cell {{
+                width: 200px;
+            }}
+            .mcap-cell {{
+                text-align: right;
+                font-weight: 600;
+                color: #28a745;
+                width: 100px;
+            }}
+            .weight-bar-container {{
+                flex-grow: 1;
+                height: 8px;
+                background: #e9ecef;
+                border-radius: 4px;
+                overflow: hidden;
+            }}
+            .weight-bar {{
+                height: 100%;
+                border-radius: 4px;
+                transition: width 0.3s ease;
+            }}
         </style>
     </head>
     <body>
@@ -1450,8 +1641,15 @@ def send_email_alert(index_name, changes):
                 <div class="stat-label">Rank Changes</div>
             </div>
         </div>
+
+        <!-- Top 10 Holdings Leaderboard -->
+        <div class="section" style="background: linear-gradient(to right, #f8f9fa, #ffffff); border-left: 4px solid #667eea;">
+            <h3><span class="emoji">🏆</span>Current Top 10 Holdings</h3>
+            <p style="margin-bottom: 15px; color: #6c757d;">Live snapshot of the most valuable components in the {index_name} index</p>
+            {format_top_holdings(current_data, top_n=10)}
+        </div>
     """
-    
+
     # Add top position changes with enhanced highlighting
     if changes["top_changes"]:
         body += f'<div class="section critical-section">'
@@ -1629,14 +1827,15 @@ def check_for_changes(index_name, data_file, get_components_function):
         print(f"Saving current data for {index_name}...")
         save_current_data(current_data, data_file)
         print(f"Data saved to {data_file}")
-        
-        return changes
-        
+
+        # Return both changes and current_data for email display
+        return changes, current_data
+
     except Exception as e:
         print(f"Error checking for changes in {index_name}: {e}")
         import traceback
         traceback.print_exc()
-        return {"message": [], "top_changes": []}
+        return {"message": [], "top_changes": []}, []
 
 def main():
     """Main function to check for index changes and send alerts."""
@@ -1653,8 +1852,8 @@ def main():
         print(f"Created/verified raw files directory: {RAW_DIR}")
         
         # Check QQQ only (S&P 500 removed for simplification)
-        qqq_changes = check_for_changes("QQQ (Nasdaq-100)", QQQ_FILE, get_qqq_components)
-        send_email_alert("QQQ (Nasdaq-100)", qqq_changes)
+        qqq_changes, qqq_current_data = check_for_changes("QQQ (Nasdaq-100)", QQQ_FILE, get_qqq_components)
+        send_email_alert("QQQ (Nasdaq-100)", qqq_changes, qqq_current_data)
         
         print("Index change check completed successfully")
         
