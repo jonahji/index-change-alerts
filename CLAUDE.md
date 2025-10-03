@@ -21,12 +21,12 @@ This will:
 
 ### Local Development Tools
 ```bash
-# Analyze ETF Excel files
-python tools/etf_excel_converter.py --mode inspect --input data/raw/spy_holdings_raw.xlsx
-python tools/etf_excel_converter.py --mode convert --input data/raw/spy_holdings_raw.xlsx
+# Analyze QQQ Excel/CSV files
+python tools/etf_excel_converter.py --mode inspect --input data/raw/qqq_holdings_raw.xlsx
+python tools/etf_excel_converter.py --mode convert --input data/raw/qqq_holdings_raw.xlsx
 python tools/etf_excel_converter.py --mode batch --input data/raw
 
-# Download and analyze ETF holdings
+# Download and analyze QQQ holdings
 python notebooks/etf_holdings_analyzer.py
 ```
 
@@ -41,11 +41,15 @@ pip install -r requirements.txt
 
 1. **Enhanced Main Script** (`scripts/check_changes.py`):
    - Downloads QQQ holdings from Invesco with multiple parsing strategies
-   - Advanced data validation with comprehensive quality checks
+   - **NEW:** `format_top_holdings()` - Generates HTML leaderboard for top 10 holdings
+   - Advanced data validation with comprehensive quality checks and null safety
    - Intelligent change detection with improved accuracy
-   - Modern HTML email alerts with visual categorization
-   - Real-time market cap integration (Alpha Vantage)
-   - Detailed logging and progress reporting
+   - Modern HTML email alerts with:
+     - Top 10 holdings leaderboard with trophy badges and visual weight bars
+     - Visual categorization and priority-based sections
+     - Color-coded market cap display
+   - Real-time market cap integration (Alpha Vantage) for top 15 holdings
+   - Detailed logging and progress reporting with emoji indicators
 
 2. **Enhanced Data Processing Pipeline**:
    - QQQ data from Invesco: `https://www.invesco.com/us/financial-products/etfs/holdings/main/holdings/0?audienceType=Investor&action=download&ticker=QQQ`
@@ -118,3 +122,33 @@ The system provides robust QQQ data handling through:
 - Raw data preservation in Actions artifacts for 14 days
 - Detailed logging helps troubleshoot parsing and validation issues
 - Built-in data quality checks ensure reliable change detection
+
+## Recent Improvements (v2.1.0)
+
+### Top 10 Holdings Leaderboard
+- **New Feature**: Every email now includes a visual leaderboard of current top 10 stocks
+- Trophy badges for podium positions (🥇🥈🥉)
+- Color-coded weight bars (green ≥5%, blue 2-5%, gray <2%)
+- Formatted market cap display ($XXX.XB or $X.XXT)
+- Always visible context, even with minimal changes
+
+### Enhanced Null Safety & Data Quality
+- Pandas 2.0+ compatibility (deprecated `error_bad_lines` → `on_bad_lines`)
+- Fixed array boolean ambiguity errors in weight processing
+- Safe numeric conversions using `pd.to_numeric(errors='coerce')`
+- Comprehensive null checking throughout the pipeline
+- Enhanced symbol standardization and cleaning
+
+### Improved Parsing & Error Handling
+- Smart content-type detection before parsing attempts
+- Prioritized CSV parsing (QQQ data is actually CSV format)
+- Reduced redundant Excel parsing attempts
+- Better error messages with specific failure context
+- Enhanced debugging information for troubleshooting
+
+### Code Quality Improvements
+- Robust error recovery with try-catch blocks
+- Safe weight and market cap comparisons
+- Validation of data types before processing
+- Graceful handling of malformed or missing data
+- Progressive fallback strategies with detailed logging
