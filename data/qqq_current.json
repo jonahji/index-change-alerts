@@ -4,7 +4,7 @@
     "name": "Apple Inc.",
     "weight": 11.94,
     "rank": 1,
-    "market_cap": 4094760583000.0,
+    "market_cap": 4110342685000.0,
     "real_data": true
   },
   {
@@ -12,7 +12,7 @@
     "name": "Microsoft Corporation",
     "weight": 10.2,
     "rank": 2,
-    "market_cap": 3523320742000.0,
+    "market_cap": 3545545834000.0,
     "real_data": true
   },
   {
@@ -20,7 +20,7 @@
     "name": "NVIDIA Corporation",
     "weight": 7.52,
     "rank": 3,
-    "market_cap": 4451948560000.0,
+    "market_cap": 4336595501000.0,
     "real_data": true
   },
   {
@@ -28,7 +28,7 @@
     "name": "Amazon.com Inc.",
     "weight": 6.82,
     "rank": 4,
-    "market_cap": 2418981994000.0,
+    "market_cap": 2455221830000.0,
     "real_data": true
   },
   {
@@ -36,7 +36,7 @@
     "name": "Meta Platforms Inc. Class A",
     "weight": 4.99,
     "rank": 5,
-    "market_cap": 1545209381000.0,
+    "market_cap": 1603609952000.0,
     "real_data": true
   },
   {
@@ -44,7 +44,7 @@
     "name": "Tesla Inc.",
     "weight": 3.53,
     "rank": 6,
-    "market_cap": 1389460718000.0,
+    "market_cap": 1394848563000.0,
     "real_data": true
   },
   {
@@ -52,7 +52,7 @@
     "name": "Alphabet Inc. Class C",
     "weight": 3.49,
     "rank": 7,
-    "market_cap": 3844516872000.0,
+    "market_cap": 3906928378000.0,
     "real_data": true
   },
   {
@@ -60,7 +60,7 @@
     "name": "Alphabet Inc. Class A",
     "weight": 3.15,
     "rank": 8,
-    "market_cap": 3858679726000.0,
+    "market_cap": 3917544686000.0,
     "real_data": true
   },
   {
@@ -68,7 +68,7 @@
     "name": "Broadcom Inc.",
     "weight": 2.79,
     "rank": 9,
-    "market_cap": 1784864965000.0,
+    "market_cap": 1818252149000.0,
     "real_data": true
   },
   {
@@ -76,7 +76,7 @@
     "name": "Costco Wholesale Corporation",
     "weight": 2.21,
     "rank": 10,
-    "market_cap": 392973910000.0,
+    "market_cap": 396614861000.0,
     "real_data": true
   },
   {
@@ -84,7 +84,7 @@
     "name": "ASML Holding NV ADR",
     "weight": 1.95,
     "rank": 11,
-    "market_cap": 383420039000.0,
+    "market_cap": 389397512000.0,
     "real_data": true
   },
   {
@@ -92,7 +92,7 @@
     "name": "Adobe Systems Incorporated",
     "weight": 1.92,
     "rank": 12,
-    "market_cap": 135205274000.0,
+    "market_cap": 135553106000.0,
     "real_data": true
   },
   {
@@ -100,7 +100,7 @@
     "name": "Cisco Systems Inc.",
     "weight": 1.87,
     "rank": 13,
-    "market_cap": 301231440000.0,
+    "market_cap": 301547520000.0,
     "real_data": true
   },
   {
@@ -108,7 +108,7 @@
     "name": "Advanced Micro Devices Inc.",
     "weight": 1.49,
     "rank": 14,
-    "market_cap": 350110351000.0,
+    "market_cap": 335588229000.0,
     "real_data": true
   },
   {
@@ -116,7 +116,7 @@
     "name": "PepsiCo Inc.",
     "weight": 1.47,
     "rank": 15,
-    "market_cap": 199200735000.0,
+    "market_cap": 200035877000.0,
     "real_data": true
   },
   {
